@@ -92,6 +92,10 @@ final class RepositoryUtils {
 		return 20;
 	}
 
+	static int maximumScrollCount() {
+		return 100;
+	}
+
 	static Function<Boolean, ScrollPosition> defaultScrollPosition() {
 		return (forward) -> ScrollPosition.offset();
 	}
