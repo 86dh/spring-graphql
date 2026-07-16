@@ -18,7 +18,8 @@ package org.springframework.graphql.docs.data.pagination.scroll.keyset;
 
 import java.util.Calendar;
 import java.util.Date;
-import java.util.Map;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 import tools.jackson.databind.DefaultTyping;
@@ -71,7 +72,8 @@ public class KeysetCursorConfiguration {
 		// Configure which types should be allowed for serialization
 		// those should include all fields included in the keyset
 		PolymorphicTypeValidator validator = BasicPolymorphicTypeValidator.builder()
-				.allowIfBaseType(Map.class)
+				.allowIfSubType(LinkedHashMap.class)
+				.allowIfSubType(HashMap.class)
 				.allowIfSubType(Calendar.class)
 				.allowIfSubType(Date.class)
 				.allowIfSubType(UUID.class)
