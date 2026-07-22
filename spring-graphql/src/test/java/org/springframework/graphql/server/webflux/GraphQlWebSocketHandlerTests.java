@@ -295,6 +295,33 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 		StepVerifier.create(session.closeStatus()).expectNext(new CloseStatus(4401, "Unauthorized")).verifyComplete();
 	}
 
+	@Test // gh-1443
+	void unauthorizedWhileConnectionInitializationIsPending() {
+		TestWebSocketSession session = handle(
+				Flux.just(
+						toWebSocketMessage("{\"type\":\"connection_init\"}"),
+						toWebSocketMessage(BOOK_QUERY)),
+				new WebSocketGraphQlInterceptor() {
+
+					@Override
+					public Mono<Object> handleConnectionInitialization(WebSocketSessionInfo info, Map<String, Object> payload) {
+						// Simulate an async initialization still in flight when the next message arrives
+						// to confirm "subscribe" is rejected rather than racing ahead of "connection_init" completion.
+						return Mono.<Object>just(Collections.emptyMap()).delayElement(Duration.ofMillis(200));
+					}
+				});
+
+		StepVerifier.create(session.getOutput())
+				.consumeNextWith((message) -> assertMessageType(message, CONNECTION_ACK))
+				.expectComplete()
+				.verify(TIMEOUT);
+
+		StepVerifier.create(session.closeStatus())
+				.expectNext(new CloseStatus(4401, "Unauthorized"))
+				.expectComplete()
+				.verify(TIMEOUT);
+	}
+
 	@Test
 	void tooManyConnectionInitRequests() {
 		TestWebSocketSession session = handle(Flux.just(

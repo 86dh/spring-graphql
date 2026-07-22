@@ -31,6 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import graphql.ExecutionResult;
@@ -251,7 +252,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		SessionState state = getSessionInfo(session);
 		switch (message.resolvedType()) {
 			case SUBSCRIBE -> {
-				if (state.getConnectionInitPayload() == null) {
+				if (!state.isConnectionInitialized()) {
 					GraphQlStatus.closeSession(session, GraphQlStatus.UNAUTHORIZED_STATUS);
 					return;
 				}
@@ -302,6 +303,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 						.defaultIfEmpty(Collections.emptyMap())
 						.publishOn(state.getScheduler()) // Serial blocking send via single thread
 						.doOnNext((ackPayload) -> {
+							state.setConnectionInitialized();
 							TextMessage outputMessage = encode(GraphQlWebSocketMessage.connectionAck(ackPayload));
 							try {
 								session.sendMessage(outputMessage);
@@ -523,6 +525,8 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 		private final AtomicReference<@Nullable Map<String, Object>> connectionInitPayloadRef = new AtomicReference<>();
 
+		private final AtomicBoolean connectionInitialized = new AtomicBoolean();
+
 		private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
 
 		private final Scheduler scheduler;
@@ -545,6 +549,14 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 		boolean setConnectionInitPayload(Map<String, Object> payload) {
 			return this.connectionInitPayloadRef.compareAndSet(null, payload);
+		}
+
+		boolean isConnectionInitialized() {
+			return this.connectionInitialized.get();
+		}
+
+		void setConnectionInitialized() {
+			this.connectionInitialized.set(true);
 		}
 
 		KeepAliveSubscriber getKeepAliveSubscriber() {

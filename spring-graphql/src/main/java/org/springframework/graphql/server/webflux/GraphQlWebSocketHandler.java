@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import graphql.ExecutionResult;
@@ -173,6 +174,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 		// Session state
 		WebFluxSessionInfo sessionInfo = new WebFluxSessionInfo(session);
 		AtomicReference<@Nullable  Map<String, Object>> connectionInitPayloadRef = new AtomicReference<>();
+		AtomicBoolean connectionInitialized = new AtomicBoolean();
 		Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
 
 		Mono.delay(this.initTimeoutDuration)
@@ -202,7 +204,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 			Map<String, Object> payload = message.getPayload();
 			switch (message.resolvedType()) {
 				case SUBSCRIBE -> {
-					if (connectionInitPayloadRef.get() == null) {
+					if (!connectionInitialized.get()) {
 						return GraphQlStatus.close(session, GraphQlStatus.UNAUTHORIZED_STATUS);
 					}
 					if (id == null) {
@@ -242,6 +244,7 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 					}
 					Flux<WebSocketMessage> flux = this.webSocketInterceptor.handleConnectionInitialization(sessionInfo, payload)
 							.defaultIfEmpty(Collections.emptyMap())
+							.doOnNext((ackPayload) -> connectionInitialized.set(true))
 							.map((ackPayload) -> this.codecDelegate.encodeConnectionAck(session, ackPayload))
 							.flux();
 					if (this.keepAliveDuration != null) {
