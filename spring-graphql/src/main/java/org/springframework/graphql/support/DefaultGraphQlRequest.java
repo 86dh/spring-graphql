@@ -141,9 +141,7 @@ public class DefaultGraphQlRequest implements GraphQlRequest {
 	@Override
 	public String toString() {
 		return "document='" + getDocument() + "'" +
-				((getOperationName() != null) ? ", operationName='" + getOperationName() + "'" : "") +
-				(!CollectionUtils.isEmpty(getVariables()) ? ", variables=" + getVariables() : "" +
-				(!CollectionUtils.isEmpty(getExtensions()) ? ", extensions=" + getExtensions() : ""));
+				((getOperationName() != null) ? ", operationName='" + getOperationName() + "'" : "");
 	}
 
 }
