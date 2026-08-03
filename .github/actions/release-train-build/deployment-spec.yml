@@ -1,0 +1,10 @@
+artifactory:
+  artifacts:
+    - pattern: "/**/spring-graphql-docs-*.zip"
+      properties:
+        zip.deployed: "false"
+        zip.name: "spring-graphql"
+        zip.type: "docs"
+maven-central:
+  excludes:
+    - "org/springframework/graphql/spring-graphql-docs/**"

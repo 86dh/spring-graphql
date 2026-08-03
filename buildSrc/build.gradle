@@ -50,6 +50,10 @@ gradlePlugin {
             id = "org.springframework.graphql.multiReleaseJar"
             implementationClass = "org.springframework.graphql.build.multirelease.MultiReleaseJarPlugin"
         }
+        repositoriesPlugin {
+            id = "org.springframework.graphql.repositories"
+            implementationClass = "org.springframework.graphql.build.RepositoriesPlugin"
+        }
 	}
 }
 

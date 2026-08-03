@@ -10,30 +10,35 @@ concurrency:
 jobs:
   build-and-deploy-snapshot:
     name: Build and Deploy Snapshot
-    runs-on: ubuntu-latest
-    if: ${{ github.repository == 'spring-projects/spring-graphql' }}
+    runs-on: ${{ vars.UBUNTU_MEDIUM || 'ubuntu-latest' }}
+    if: ${{ github.repository == 'spring-projects/spring-graphql' || github.repository == 'spring-projects/spring-graphql-commercial' }}
     steps:
       - name: Check Out Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and Publish
         id: build-and-publish
         uses: ./.github/actions/build-and-publish
         with:
+          commercial-release-repository-url: ${{ vars.COMMERCIAL_RELEASE_REPO_URL }}
+          commercial-repository-password: ${{ secrets.COMMERCIAL_ARTIFACTORY_PASSWORD }}
+          commercial-repository-username: ${{ secrets.COMMERCIAL_ARTIFACTORY_USERNAME }}
+          commercial-snapshot-repository-url: ${{ vars.COMMERCIAL_SNAPSHOT_REPO_URL }}
           develocity-access-key: ${{ secrets.GRADLE_ENTERPRISE_SECRET_ACCESS_KEY }}
           publish: true
       - name: Deploy
         uses: spring-io/artifactory-deploy-action@926d7f7cc810569395346bf3a4d91b380b3e355b # v0.0.4
         with:
-          uri: 'https://repo.spring.io'
-          username: ${{ secrets.ARTIFACTORY_USERNAME }}
-          password: ${{ secrets.ARTIFACTORY_PASSWORD }}
-          build-name: ${{ format('spring-graphql-{0}', github.ref_name)}}
-          repository: 'libs-snapshot-local'
-          folder: 'deployment-repository'
-          signing-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          signing-passphrase: ${{ secrets.GPG_PASSPHRASE }}
           artifact-properties: |
             /**/spring-graphql-docs-*.zip::zip.name=spring-graphql,zip.type=docs,zip.deployed=false
+          build-name: ${{ vars.COMMERCIAL && format('spring-graphql-commercial-{0}', github.ref_name) || format('spring-graphql-{0}', github.ref_name) }}
+          folder: 'deployment-repository'
+          project: ${{ vars.COMMERCIAL && 'spring' }}
+          repository: ${{ vars.COMMERCIAL && 'spring-enterprise-maven-dev-local' || 'libs-snapshot-local' }}
+          uri: ${{ vars.COMMERCIAL_DEPLOY_REPO_URL || 'https://repo.spring.io' }}
+          username: ${{ vars.COMMERCIAL && secrets.COMMERCIAL_ARTIFACTORY_USERNAME || secrets.ARTIFACTORY_USERNAME }}
+          password: ${{ vars.COMMERCIAL && secrets.COMMERCIAL_ARTIFACTORY_PASSWORD || secrets.ARTIFACTORY_PASSWORD }}
+          signing-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          signing-passphrase: ${{ secrets.GPG_PASSPHRASE }}
       - name: Send Notification
         uses: ./.github/actions/send-notification
         if: always()
@@ -44,3 +49,15 @@ jobs:
           run-name: ${{ format('{0} | Linux | Java 25', github.ref_name) }}
     outputs:
       version: ${{ steps.build-and-publish.outputs.version }}
+  trigger-docs-build:
+    name: Trigger Docs Build
+    needs: build-and-deploy-snapshot
+    if: ${{ !vars.COMMERCIAL }} # remove when commercial support
+    permissions:
+      actions: write
+    runs-on: ${{ vars.UBUNTU_SMALL || 'ubuntu-latest' }}
+    steps:
+      - name: Run Deploy Docs Workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy-docs.yml --repo ${{ github.repository }} -r docs-build -f build-refname=${{ github.ref_name }}

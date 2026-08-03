@@ -11,11 +11,11 @@ jobs:
   ci:
     name: '${{ matrix.os.name}} | Java ${{ matrix.java.version}}'
     runs-on: ${{ matrix.os.id }}
-    if: ${{ github.repository == 'spring-projects/spring-graphql' }}
+    if: ${{ github.repository == 'spring-projects/spring-graphql' || github.repository == 'spring-projects/spring-graphql-commercial' }}
     strategy:
       matrix:
         os:
-          - id: ubuntu-latest
+          - id: ${{ vars.UBUNTU_MEDIUM || 'ubuntu-latest' }}
             name: Linux
         java:
           - version: 17
@@ -23,20 +23,25 @@ jobs:
           - version: 21
             toolchain: true
           - version: 25
-            early-access: true
+            toolchain: false
+          - version: 26
             toolchain: true
         exclude:
           - os:
               name: Linux
             java:
-              version: 17
+              version: 25
     steps:
       - name: Check Out Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build
         id: build
         uses: ./.github/actions/build-and-publish
         with:
+          commercial-release-repository-url: ${{ vars.COMMERCIAL_RELEASE_REPO_URL }}
+          commercial-repository-password: ${{ secrets.COMMERCIAL_ARTIFACTORY_PASSWORD }}
+          commercial-repository-username: ${{ secrets.COMMERCIAL_ARTIFACTORY_USERNAME }}
+          commercial-snapshot-repository-url: ${{ vars.COMMERCIAL_SNAPSHOT_REPO_URL }}
           publish: false
           java-version: ${{ matrix.java.version }}
           java-early-access: ${{ matrix.java.early-access || 'false' }}
