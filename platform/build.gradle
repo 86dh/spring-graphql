@@ -8,7 +8,7 @@ javaPlatform {
 
 dependencies {
 	api(platform("org.springframework:spring-framework-bom:${springFrameworkVersion}"))
-	api(platform("com.fasterxml.jackson:jackson-bom:2.21.2"))
+	api(platform("com.fasterxml.jackson:jackson-bom:2.21.5"))
 	api(platform("tools.jackson:jackson-bom:3.1.2"))
 	api(platform("io.projectreactor:reactor-bom:2025.0.6"))
 	api(platform("io.micrometer:micrometer-bom:1.16.6"))
@@ -20,9 +20,9 @@ dependencies {
 	api(platform("org.jetbrains.kotlin:kotlin-bom:${kotlinVersion}"))
 	api(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.10.2"))
 	api(platform("org.junit:junit-bom:6.0.3"))
-	api(platform("org.mockito:mockito-bom:5.20.0"))
+	api(platform("org.mockito:mockito-bom:5.23.0"))
 	api(platform("org.testcontainers:testcontainers-bom:2.0.5"))
-	api(platform("org.apache.logging.log4j:log4j-bom:2.25.4"))
+	api(platform("org.apache.logging.log4j:log4j-bom:2.25.5"))
 	api(platform("org.assertj:assertj-bom:3.27.7"))
 	api(platform("org.seleniumhq.selenium:selenium-dependencies-bom:4.20.0"))
 
@@ -33,13 +33,13 @@ dependencies {
 		api("jakarta.servlet:jakarta.servlet-api:6.1.0")
 		api("jakarta.websocket:jakarta.websocket-api:2.2.0")
 		api("jakarta.websocket:jakarta.websocket-client-api:2.2.0")
-		api("jakarta.validation:jakarta.validation-api:3.1.0")
+		api("jakarta.validation:jakarta.validation-api:3.1.1")
 		api("jakarta.persistence:jakarta.persistence-api:3.2.0")
 
 		api("com.apollographql.federation:federation-graphql-java-support:6.0.0")
 		api("com.netflix.graphql.dgs.codegen:graphql-dgs-codegen-shared-core:8.5.0")
 
-		api("org.apache.tomcat.embed:tomcat-embed-el:11.0.21")
+		api("org.apache.tomcat.embed:tomcat-embed-el:11.0.24")
 
 		api("com.google.code.findbugs:jsr305:3.0.2")
 		api("com.jayway.jsonpath:json-path:2.10.0")
