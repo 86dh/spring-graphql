@@ -39,6 +39,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.graphql.Author;
 import org.springframework.graphql.Book;
 import org.springframework.graphql.BookSource;
+import org.springframework.graphql.DisabledForCompatibilityTests;
 import org.springframework.graphql.ExecutionGraphQlRequest;
 import org.springframework.graphql.ExecutionGraphQlResponse;
 import org.springframework.graphql.GraphQlSetup;
@@ -62,6 +63,7 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
  *
  * @author Rossen Stoyanchev
  */
+@DisabledForCompatibilityTests
 class EntityMappingInvocationTests {
 
 	private static final Resource federationSchema = new ClassPathResource("books/federation-schema.graphqls");

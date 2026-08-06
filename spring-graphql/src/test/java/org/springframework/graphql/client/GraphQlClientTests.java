@@ -120,7 +120,7 @@ class GraphQlClientTests extends GraphQlClientTestSupport {
 	void retrieveInvalidResponse() {
 
 		String document = "errorsOnlyResponse";
-		getGraphQlService().setErrors(document, ValidationError.newValidationError().validationErrorType(ValidationErrorType.InvalidSyntax).build());
+		getGraphQlService().setErrors(document, ValidationError.newValidationError().validationErrorType(ValidationErrorType.InvalidSyntax).description("Invalid syntax").build());
 		testRetrieveFieldAccessException(document, "me");
 
 		document = "nullDataResponse";
@@ -163,7 +163,7 @@ class GraphQlClientTests extends GraphQlClientTestSupport {
 	void executeInvalidResponse() {
 
 		String document = "errorsOnlyResponse";
-		getGraphQlService().setErrors(document, ValidationError.newValidationError().validationErrorType(ValidationErrorType.InvalidSyntax).build());
+		getGraphQlService().setErrors(document, ValidationError.newValidationError().validationErrorType(ValidationErrorType.InvalidSyntax).description("Invalid syntax").build());
 		testExecuteFailedResponse(document);
 
 		document = "nullDataResponse";

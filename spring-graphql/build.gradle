@@ -1,5 +1,6 @@
 plugins {
     id 'org.springframework.graphql.multiReleaseJar'
+	id 'io.spring.compatibility-test'
 }
 
 description = "GraphQL Support for Spring Applications"
@@ -117,6 +118,27 @@ dependencies {
 	testFixturesApi 'com.squareup.okhttp3:mockwebserver3'
 	testFixturesApi 'tools.jackson.core:jackson-databind'
 	testFixturesApi 'com.fasterxml.jackson.core:jackson-databind'
+}
+
+compatibilityTest {
+	useJUnitPlatform()
+	dependency('GraphQL Java') { graphQLJava ->
+		graphQLJava.groupId = 'com.graphql-java'
+		graphQLJava.artifactId = 'graphql-java'
+		graphQLJava.versions = [
+				'26.0'
+		]
+	}
+}
+
+tasks.withType(Test).configureEach {
+	if (name.startsWith("compatibilityTest")) {
+		exclude '**/*Kotlin*.class'
+		exclude '**/*ExtensionsTests*.class'
+		useJUnitPlatform {
+			excludeTags 'compatibility-exclude'
+		}
+	}
 }
 
 test {
