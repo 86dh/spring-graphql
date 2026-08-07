@@ -86,4 +86,19 @@ class ArgumentValueTests {
 		assertThat(ArgumentValue.ofNullable(null)).hasToString("ArgumentValue[empty]");
 		assertThat(ArgumentValue.ofNullable("hello")).hasToString("ArgumentValue[hello]");
 	}
+
+	@Test
+	void omittedAndExplicitNullShouldNotBeEqual() {
+		ArgumentValue<String> omitted = ArgumentValue.omitted();
+		ArgumentValue<String> explicitNull = ArgumentValue.ofNullable(null);
+		assertThat(omitted).isNotEqualTo(explicitNull);
+		assertThat(omitted.hashCode()).isNotEqualTo(explicitNull.hashCode());
+	}
+
+	@Test
+	void sameValuesShouldBeEqual() {
+		assertThat(ArgumentValue.omitted()).isEqualTo(ArgumentValue.omitted());
+		assertThat(ArgumentValue.ofNullable(null)).isEqualTo(ArgumentValue.ofNullable(null));
+		assertThat(ArgumentValue.ofNullable("hello")).isEqualTo(ArgumentValue.ofNullable("hello"));
+	}
 }

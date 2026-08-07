@@ -126,7 +126,7 @@ public final class ArgumentValue<T> {
 		if (!(other instanceof ArgumentValue<?> otherValue)) {
 			return false;
 		}
-		return ObjectUtils.nullSafeEquals(this.value, otherValue.value);
+		return (this.omitted == otherValue.omitted && ObjectUtils.nullSafeEquals(this.value, otherValue.value));
 	}
 
 	@Override
