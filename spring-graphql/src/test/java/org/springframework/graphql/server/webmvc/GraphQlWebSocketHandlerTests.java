@@ -38,6 +38,7 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
 
 import org.springframework.aot.hint.RuntimeHints;
@@ -290,6 +291,25 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 		assertThatNoException().isThrownBy(() ->
 				this.handler.handleTextMessage(this.session, new TextMessage("{\"type\":\"ping\"}")));
+	}
+
+	@Test // gh-1501
+	void responseAfterConnectionClosed() throws Exception {
+		Sinks.Empty<Void> responseDelay = Sinks.empty();
+		GraphQlWebSocketHandler handler = initWebSocketHandler(
+				(request, chain) -> chain.next(request).delayUntil((response) -> responseDelay.asMono()));
+
+		handle(handler, new TextMessage("{\"type\":\"connection_init\"}"), new TextMessage(BOOK_SUBSCRIPTION));
+		handler.afterConnectionClosed(this.session, CloseStatus.NORMAL);
+
+		assertThatNoException().isThrownBy(responseDelay::tryEmitEmpty);
+
+		assertThat(this.session.isOpen()).isTrue();
+		StepVerifier.create(this.session.getOutput())
+				.consumeNextWith((message) -> assertMessageType(message, GraphQlWebSocketMessageType.CONNECTION_ACK))
+				.then(this.session::close) // Complete output Flux
+				.expectComplete()
+				.verify(TIMEOUT);
 	}
 
 	@Test
