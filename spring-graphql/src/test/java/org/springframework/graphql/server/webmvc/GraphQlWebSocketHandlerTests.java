@@ -159,8 +159,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void keepAlive() throws Exception {
-		GraphQlWebSocketHandler webSocketHandler =
-				new GraphQlWebSocketHandler(initHandler(), converter, Duration.ofSeconds(60), Duration.ofMillis(10));
+		GraphQlWebSocketHandler webSocketHandler = GraphQlWebSocketHandler
+				.builder(initHandler(), converter, Duration.ofSeconds(60))
+				.keepAliveDuration(Duration.ofMillis(10))
+				.build();
 
 		handle(webSocketHandler, new TextMessage("{\"type\":\"connection_init\"}"));
 
@@ -333,7 +335,7 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void connectionInitTimeout() {
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(initHandler(), converter, Duration.ofMillis(50));
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler.builder(initHandler(), converter, Duration.ofMillis(50)).build();
 		handler.afterConnectionEstablished(this.session);
 
 		StepVerifier.create(this.session.closeStatus())
@@ -405,7 +407,7 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 				.subscriptionFetcher("greetings", env -> Flux.just("a", null, "b"))
 				.toWebGraphQlHandler();
 
-		handle(new GraphQlWebSocketHandler(webHandler, converter, TIMEOUT),
+		handle(GraphQlWebSocketHandler.builder(webHandler, converter, TIMEOUT).build(),
 				new TextMessage("{\"type\":\"connection_init\"}"),
 				new TextMessage(GREETING_QUERY));
 
@@ -477,7 +479,7 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void shipsDefaultCorsConfiguration() throws Exception {
-		GraphQlWebSocketHandler webSocketHandler = new GraphQlWebSocketHandler(initHandler(), converter, Duration.ofSeconds(60));
+		GraphQlWebSocketHandler webSocketHandler = GraphQlWebSocketHandler.builder(initHandler(), converter, Duration.ofSeconds(60)).build();
 		WebSocketHttpRequestHandler httpRequestHandler = webSocketHandler.initWebSocketHttpRequestHandler(new DefaultHandshakeHandler());
 
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "https://spring.io/graphql");
@@ -492,7 +494,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 	void allowsCustomCorsConfiguration() throws Exception {
 		CorsConfiguration corsConfiguration = new CorsConfiguration();
 		corsConfiguration.addAllowedOrigin("https://example.org");
-		GraphQlWebSocketHandler webSocketHandler = new GraphQlWebSocketHandler(initHandler(), converter, Duration.ofSeconds(60), null, corsConfiguration);
+		GraphQlWebSocketHandler webSocketHandler = GraphQlWebSocketHandler
+				.builder(initHandler(), converter, Duration.ofSeconds(60))
+				.corsConfiguration(corsConfiguration)
+				.build();
 		WebSocketHttpRequestHandler httpRequestHandler = webSocketHandler.initWebSocketHttpRequestHandler(new DefaultHandshakeHandler());
 
 		ServerContainer serverContainer = mock();
@@ -544,7 +549,7 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	private GraphQlWebSocketHandler initWebSocketHandler(WebGraphQlInterceptor... interceptors) {
 		try {
-			return new GraphQlWebSocketHandler(initHandler(interceptors), converter, Duration.ofSeconds(60));
+			return GraphQlWebSocketHandler.builder(initHandler(interceptors), converter, Duration.ofSeconds(60)).build();
 		}
 		catch (Exception ex) {
 			throw new IllegalStateException(ex);

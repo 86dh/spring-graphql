@@ -59,7 +59,7 @@ class WebSocketGraphQlTesterTests {
 		graphQlService.setDefaultResponse("{}");
 		WebGraphQlHandler graphQlHandler = WebGraphQlHandler.builder(graphQlService).build();
 		ClientCodecConfigurer configurer = ClientCodecConfigurer.create();
-		WebSocketHandler handler = new GraphQlWebSocketHandler(graphQlHandler, configurer, Duration.ofSeconds(5));
+		WebSocketHandler handler = GraphQlWebSocketHandler.builder(graphQlHandler, configurer, Duration.ofSeconds(5)).build();
 		return new TestWebSocketClient(handler);
 	}
 

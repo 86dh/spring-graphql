@@ -97,7 +97,9 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 	 * @param codecConfigurer codec configurer for JSON encoding and decoding
 	 * @param connectionInitTimeout how long to wait after the establishment of
 	 * the WebSocket for the {@code "connection_ini"} message from the client.
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler, CodecConfigurer, Duration)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlWebSocketHandler(
 			WebGraphQlHandler graphQlHandler, CodecConfigurer codecConfigurer, Duration connectionInitTimeout) {
 
@@ -113,7 +115,9 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 	 * @param keepAliveDuration how frequently to send ping messages when no
 	 * other messages are sent
 	 * @since 1.3.0
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler, CodecConfigurer, Duration)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlWebSocketHandler(
 			WebGraphQlHandler graphQlHandler, CodecConfigurer codecConfigurer,
 			Duration connectionInitTimeout, @Nullable Duration keepAliveDuration) {
@@ -132,7 +136,9 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 	 * @param corsConfiguration the CORS configuration to use, a {@code null}
 	 * configuration means no CORS check.
 	 * @since 1.4.6
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler, CodecConfigurer, Duration)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlWebSocketHandler(
 			WebGraphQlHandler graphQlHandler, CodecConfigurer codecConfigurer,
 			Duration connectionInitTimeout, @Nullable Duration keepAliveDuration,
@@ -146,6 +152,20 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 		this.initTimeoutDuration = connectionInitTimeout;
 		this.keepAliveDuration = keepAliveDuration;
 		this.corsConfiguration = corsConfiguration;
+	}
+
+	/**
+	 * Create a builder for a {@code GraphQlWebSocketHandler}.
+	 * @param graphQlHandler common handler for GraphQL over WebSocket requests
+	 * @param codecConfigurer codec configurer for JSON encoding and decoding
+	 * @param connectionInitTimeout how long to wait after the establishment of
+	 * the WebSocket for the {@code "connection_ini"} message from the client.
+	 * @since 2.1.0
+	 */
+	public static Builder builder(
+			WebGraphQlHandler graphQlHandler, CodecConfigurer codecConfigurer, Duration connectionInitTimeout) {
+
+		return new Builder(graphQlHandler, codecConfigurer, connectionInitTimeout);
 	}
 
 
@@ -390,5 +410,68 @@ public class GraphQlWebSocketHandler implements WebSocketHandler, CorsConfigurat
 	}
 
 
+	/**
+	 * Builder for {@link GraphQlWebSocketHandler}.
+	 * @since 2.1.0
+	 */
+	public static final class Builder {
+
+		private final WebGraphQlHandler graphQlHandler;
+
+		private final CodecConfigurer codecConfigurer;
+
+		private final Duration connectionInitTimeout;
+
+		private @Nullable Duration keepAliveDuration;
+
+		private @Nullable CorsConfiguration corsConfiguration = new CorsConfiguration();
+
+		private Builder(
+				WebGraphQlHandler graphQlHandler, CodecConfigurer codecConfigurer, Duration connectionInitTimeout) {
+
+			Assert.notNull(graphQlHandler, "WebGraphQlHandler is required");
+			Assert.notNull(codecConfigurer, "CodecConfigurer is required");
+			Assert.notNull(connectionInitTimeout, "'connectionInitTimeout' is required");
+
+			this.graphQlHandler = graphQlHandler;
+			this.codecConfigurer = codecConfigurer;
+			this.connectionInitTimeout = connectionInitTimeout;
+		}
+
+		/**
+		 * Configure how frequently to send ping messages when no other
+		 * messages are being sent.
+		 * <p>By default, this is not set, and keep-alive pings are not sent.
+		 * @param keepAliveDuration the keep-alive duration to use
+		 * @return this builder
+		 */
+		public Builder keepAliveDuration(@Nullable Duration keepAliveDuration) {
+			this.keepAliveDuration = keepAliveDuration;
+			return this;
+		}
+
+		/**
+		 * Configure the CORS configuration to use for the handshake request.
+		 * <p>By default, this is set to an empty {@link CorsConfiguration}.
+		 * @param corsConfiguration the CORS configuration to use, or
+		 * {@code null} to skip the CORS check
+		 * @return this builder
+		 */
+		public Builder corsConfiguration(@Nullable CorsConfiguration corsConfiguration) {
+			this.corsConfiguration = corsConfiguration;
+			return this;
+		}
+
+		/**
+		 * Build the {@link GraphQlWebSocketHandler} instance.
+		 */
+		@SuppressWarnings("deprecation")
+		public GraphQlWebSocketHandler build() {
+			return new GraphQlWebSocketHandler(
+					this.graphQlHandler, this.codecConfigurer, this.connectionInitTimeout,
+					this.keepAliveDuration, this.corsConfiguration);
+		}
+
+	}
 
 }

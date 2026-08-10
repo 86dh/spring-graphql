@@ -259,7 +259,7 @@ class WebGraphQlTesterBuilderTests {
 		@Override
 		public WebSocketGraphQlTester.Builder<?> initBuilder() {
 			ClientCodecConfigurer configurer = ClientCodecConfigurer.create();
-			WebSocketHandler handler = new GraphQlWebSocketHandler(webGraphQlHandler(), configurer, Duration.ofSeconds(5));
+			WebSocketHandler handler = GraphQlWebSocketHandler.builder(webGraphQlHandler(), configurer, Duration.ofSeconds(5)).build();
 			return WebSocketGraphQlTester.builder(URI.create(""), new TestWebSocketClient(handler));
 		}
 

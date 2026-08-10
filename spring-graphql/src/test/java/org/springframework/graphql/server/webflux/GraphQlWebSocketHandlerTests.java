@@ -125,8 +125,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void keepAlive() {
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
-				initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60), Duration.ofMillis(10));
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60))
+				.keepAliveDuration(Duration.ofMillis(10))
+				.build();
 
 		TestWebSocketSession session =
 				new TestWebSocketSession(Flux.just(toWebSocketMessage("{\"type\":\"connection_init\"}")));
@@ -144,8 +146,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void keepAliveConcurrentClients() {
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
-				initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60), Duration.ofMillis(10));
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60))
+				.keepAliveDuration(Duration.ofMillis(10))
+				.build();
 
 		TestWebSocketSession session1 =
 				new TestWebSocketSession(Flux.just(toWebSocketMessage("{\"type\":\"connection_init\"}")));
@@ -341,8 +345,9 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 
 	@Test
 	void connectionInitTimeout() {
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
-				initHandler(), ServerCodecConfigurer.create(), Duration.ofMillis(50));
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(), ServerCodecConfigurer.create(), Duration.ofMillis(50))
+				.build();
 
 		TestWebSocketSession session = new TestWebSocketSession(Flux.empty());
 		handler.handle(session).block(TIMEOUT);
@@ -415,7 +420,7 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 				.subscriptionFetcher("greetings", env -> Flux.just("a", null, "b"))
 				.toWebGraphQlHandler();
 
-		new GraphQlWebSocketHandler(webHandler, ServerCodecConfigurer.create(), TIMEOUT)
+		GraphQlWebSocketHandler.builder(webHandler, ServerCodecConfigurer.create(), TIMEOUT).build()
 				.handle(session).block(TIMEOUT);
 
 		StepVerifier.create(session.getOutput())
@@ -444,8 +449,9 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 	@Test
 	void shipsDefaultCorsConfiguration() {
 		DefaultCorsProcessor corsProcessor = new DefaultCorsProcessor();
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
-				initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60));
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60))
+				.build();
 
 		MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("https://spring.io/graphql")
 				.header("Origin", "https://example.org"));
@@ -457,8 +463,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 		CorsConfiguration config = new CorsConfiguration();
 		config.addAllowedOrigin("https://example.org");
 		DefaultCorsProcessor corsProcessor = new DefaultCorsProcessor();
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
-				initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60), null, config);
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(), ServerCodecConfigurer.create(), Duration.ofSeconds(60))
+				.corsConfiguration(config)
+				.build();
 
 		MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("https://spring.io/graphql")
 				.header("Origin", "https://example.org"));
@@ -483,10 +491,10 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 	}
 
 	private TestWebSocketSession handle(Flux<WebSocketMessage> input, WebGraphQlInterceptor... interceptors) {
-		GraphQlWebSocketHandler handler = new GraphQlWebSocketHandler(
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler.builder(
 				initHandler(interceptors),
 				ServerCodecConfigurer.create(),
-				Duration.ofSeconds(60));
+				Duration.ofSeconds(60)).build();
 
 		TestWebSocketSession session = new TestWebSocketSession(input);
 		handler.handle(session).block(TIMEOUT);
