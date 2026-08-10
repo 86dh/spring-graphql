@@ -124,7 +124,26 @@ for the actual Boot autoconfig details.
 The 1.0.x branch of this repository contains a WebFlux
 {github-10x-branch}/samples/webflux-websocket[WebSocket sample] application.
 
+[[server.transports.websocket.resources]]
+=== WebSocket Resource Management
 
+Unlike HTTP requests, a WebSocket connection stays open for as long as the client keeps it,
+and a single session can carry any number of concurrent subscriptions over time. Applications
+should size their deployment accordingly, so that the amount of CPU and memory used at
+runtime stays within an expected range. This is also a useful safeguard, since it limits how
+much a single client can affect the rest of the deployment. The following are worth
+configuring:
+
+- The maximum number of open server connections, which is a property of the underlying server
+or connector rather than something Spring for GraphQL configures directly.
+- The maximum size of a buffered WebSocket message. For the Spring MVC variant, this is
+configured through the Jakarta WebSocket `ServerContainer`, for example with
+`setDefaultMaxTextMessageBufferSize`. For the Spring WebFlux variant, the equivalent setting
+depends on the underlying reactive server.
+- The maximum number of concurrent subscriptions a single WebSocket session is allowed to
+have, configured with the `maxSubscriptionsPerSession` builder option on
+`GraphQlWebSocketHandler`. By default, there is no limit; once it is reached, the session
+is closed.
 
 [[server.transports.rsocket]]
 == RSocket

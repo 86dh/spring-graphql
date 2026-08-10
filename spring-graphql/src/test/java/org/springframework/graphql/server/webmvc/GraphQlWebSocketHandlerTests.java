@@ -365,6 +365,30 @@ class GraphQlWebSocketHandlerTests extends WebSocketHandlerTestSupport {
 	}
 
 	@Test
+	void maxSubscriptionsPerSessionExceeded() throws Exception {
+		String secondSubscription = BOOK_SUBSCRIPTION.replace("\"id\":\"" + SUBSCRIPTION_ID + "\"", "\"id\":\"2\"");
+
+		GraphQlWebSocketHandler handler = GraphQlWebSocketHandler
+				.builder(initHandler(new ConsumeOneAndNeverCompleteInterceptor()), converter, Duration.ofSeconds(60))
+				.maxSubscriptionsPerSession(1)
+				.build();
+
+		handle(handler,
+				new TextMessage("{\"type\":\"connection_init\"}"),
+				new TextMessage(BOOK_SUBSCRIPTION),
+				new TextMessage(secondSubscription));
+
+		// Collect messages until session closed
+		List<GraphQlWebSocketMessage> messages = new ArrayList<>();
+		this.session.getOutput().subscribe((message) -> messages.add(decode(message)));
+
+		StepVerifier.create(this.session.closeStatus())
+				.expectNext(new CloseStatus(4401, "Unauthorized"))
+				.expectComplete()
+				.verify(TIMEOUT);
+	}
+
+	@Test
 	void clientCompletion() throws Exception {
 		GraphQlWebSocketHandler handler = initWebSocketHandler(new ConsumeOneAndNeverCompleteInterceptor());
 

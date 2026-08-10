@@ -111,6 +111,8 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 	private final @Nullable CorsConfiguration corsConfiguration;
 
+	private final int maxSubscriptionsPerSession;
+
 	private final Map<String, SessionState> sessionInfoMap = new ConcurrentHashMap<>();
 
 
@@ -166,6 +168,14 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			WebGraphQlHandler graphQlHandler, HttpMessageConverter<Object> converter,
 			Duration connectionInitTimeout, @Nullable Duration keepAliveDuration, @Nullable CorsConfiguration corsConfiguration) {
 
+		this(graphQlHandler, converter, connectionInitTimeout, keepAliveDuration, corsConfiguration, -1);
+	}
+
+	private GraphQlWebSocketHandler(
+			WebGraphQlHandler graphQlHandler, HttpMessageConverter<Object> converter,
+			Duration connectionInitTimeout, @Nullable Duration keepAliveDuration, @Nullable CorsConfiguration corsConfiguration,
+			int maxSubscriptionsPerSession) {
+
 		Assert.notNull(graphQlHandler, "WebGraphQlHandler is required");
 		Assert.notNull(converter, "HttpMessageConverter for JSON is required");
 
@@ -176,6 +186,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		this.converter = converter;
 		this.keepAliveDuration = keepAliveDuration;
 		this.corsConfiguration = corsConfiguration;
+		this.maxSubscriptionsPerSession = maxSubscriptionsPerSession;
 	}
 
 	/**
@@ -244,7 +255,8 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			return;
 		}
 
-		SessionState sessionState = new SessionState(session.getId(), new WebMvcSessionInfo(session));
+		SessionState sessionState = new SessionState(
+				session.getId(), new WebMvcSessionInfo(session), this.maxSubscriptionsPerSession);
 		this.sessionInfoMap.put(session.getId(), sessionState);
 
 		Mono.delay(this.initTimeoutDuration)
@@ -309,10 +321,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			}
 			case COMPLETE -> {
 				if (id != null) {
-					Subscription subscription = state.getSubscriptions().remove(id);
-					if (subscription != null) {
-						subscription.cancel();
-					}
+					state.getSubscriptions().cancel(id);
 					this.webSocketGraphQlInterceptor.handleCancelledSubscription(state.getSessionInfo(), id)
 							.block(Duration.ofSeconds(10));
 				}
@@ -383,12 +392,7 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			// Subscription
 			responseFlux = Flux.from((Publisher<ExecutionResult>) response.getData())
 					.map(ExecutionResult::toSpecification)
-					.doOnSubscribe((subscription) -> {
-							Subscription prev = getSessionInfo(session).getSubscriptions().putIfAbsent(id, subscription);
-							if (prev != null) {
-								throw new SubscriptionExistsException();
-							}
-					});
+					.doOnSubscribe((subscription) -> getSessionInfo(session).getSubscriptions().add(id, subscription));
 		}
 		else {
 			// Single response (query or mutation) that may contain errors
@@ -402,6 +406,13 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 					if (ex instanceof SubscriptionExistsException) {
 						CloseStatus status = new CloseStatus(4409, "Subscriber for " + id + " already exists");
 						GraphQlStatus.closeSession(session, status);
+						return Flux.empty();
+					}
+					if (ex instanceof TooManySubscriptionsException) {
+						if (logger.isErrorEnabled()) {
+							logger.error("Subscriptions limit reached (" + this.maxSubscriptionsPerSession + ") for session '" + session.getId() + "'");
+						}
+						GraphQlStatus.closeSession(session, GraphQlStatus.UNAUTHORIZED_STATUS);
 						return Flux.empty();
 					}
 					List<GraphQLError> errors;
@@ -550,14 +561,15 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 
 		private final AtomicBoolean connectionInitialized = new AtomicBoolean();
 
-		private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
+		private final Subscriptions subscriptions;
 
 		private final Scheduler scheduler;
 
 		private final KeepAliveSubscriber keepAliveSubscriber;
 
-		SessionState(String graphQlSessionId, WebMvcSessionInfo sessionInfo) {
+		SessionState(String graphQlSessionId, WebMvcSessionInfo sessionInfo, int maxSubscriptionsPerSession) {
 			this.sessionInfo = sessionInfo;
+			this.subscriptions = new Subscriptions(maxSubscriptionsPerSession);
 			this.scheduler = ReactorSchedulers.singleThread("GraphQL-WsSession-" + graphQlSessionId);
 			this.keepAliveSubscriber = new KeepAliveSubscriber(sessionInfo.getSession());
 		}
@@ -586,26 +598,69 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			return this.keepAliveSubscriber;
 		}
 
-		Map<String, Subscription> getSubscriptions() {
+		Subscriptions getSubscriptions() {
 			return this.subscriptions;
 		}
 
 		void dispose() {
 			this.keepAliveSubscriber.cancel();
-			for (Map.Entry<String, Subscription> entry : this.subscriptions.entrySet()) {
-				try {
-					entry.getValue().cancel();
-				}
-				catch (Throwable ex) {
-					// Ignore and keep on
-				}
-			}
-			this.subscriptions.clear();
+			this.subscriptions.cancelAll();
 			this.scheduler.dispose();
 		}
 
 		Scheduler getScheduler() {
 			return this.scheduler;
+		}
+
+	}
+
+
+	/**
+	 * Tracks the active subscriptions for a session, enforcing the configured
+	 * maximum number of concurrent subscriptions.
+	 */
+	private static final class Subscriptions {
+
+		private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
+
+		private final int maxSubscriptionsPerSession;
+
+		Subscriptions(int maxSubscriptionsPerSession) {
+			this.maxSubscriptionsPerSession = maxSubscriptionsPerSession;
+		}
+
+		void add(String id, Subscription subscription) {
+			synchronized (this.subscriptions) {
+				if (this.maxSubscriptionsPerSession != -1 && this.subscriptions.size() >= this.maxSubscriptionsPerSession) {
+					throw new TooManySubscriptionsException();
+				}
+				if (this.subscriptions.putIfAbsent(id, subscription) != null) {
+					throw new SubscriptionExistsException();
+				}
+			}
+		}
+
+		void remove(String id) {
+			this.subscriptions.remove(id);
+		}
+
+		void cancel(String id) {
+			Subscription subscription = this.subscriptions.remove(id);
+			if (subscription != null) {
+				subscription.cancel();
+			}
+		}
+
+		void cancelAll() {
+			this.subscriptions.forEach((id, subscription) -> {
+				try {
+					subscription.cancel();
+				}
+				catch (Throwable ex) {
+					// Ignore and keep on
+				}
+			});
+			this.subscriptions.clear();
 		}
 
 	}
@@ -725,6 +780,11 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 	}
 
 
+	@SuppressWarnings("serial")
+	private static final class TooManySubscriptionsException extends RuntimeException {
+	}
+
+
 	/**
 	 * Builder for {@link GraphQlWebSocketHandler}.
 	 * @since 2.1.0
@@ -740,6 +800,8 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		private @Nullable Duration keepAliveDuration;
 
 		private @Nullable CorsConfiguration corsConfiguration = new CorsConfiguration();
+
+		private int maxSubscriptionsPerSession = -1;
 
 		private Builder(
 				WebGraphQlHandler graphQlHandler, HttpMessageConverter<Object> converter, Duration connectionInitTimeout) {
@@ -778,13 +840,28 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 		}
 
 		/**
+		 * Configure the maximum number of concurrent subscriptions a single
+		 * WebSocket session is allowed to have active at a given time.
+		 * <p>By default, this is set to {@code -1}, meaning there is no limit.
+		 * @param maxSubscriptionsPerSession the maximum number of concurrent
+		 * subscriptions per session, or {@code -1} for no limit
+		 * @return this builder
+		 * @since 2.1.0
+		 */
+		public Builder maxSubscriptionsPerSession(int maxSubscriptionsPerSession) {
+			Assert.isTrue(maxSubscriptionsPerSession == -1 || maxSubscriptionsPerSession > 0,
+					"'maxSubscriptionsPerSession' must be positive, or -1 for no limit");
+			this.maxSubscriptionsPerSession = maxSubscriptionsPerSession;
+			return this;
+		}
+
+		/**
 		 * Build the {@link GraphQlWebSocketHandler} instance.
 		 */
-		@SuppressWarnings("deprecation")
 		public GraphQlWebSocketHandler build() {
 			return new GraphQlWebSocketHandler(
 					this.graphQlHandler, this.converter, this.connectionInitTimeout,
-					this.keepAliveDuration, this.corsConfiguration);
+					this.keepAliveDuration, this.corsConfiguration, this.maxSubscriptionsPerSession);
 		}
 
 	}
