@@ -345,12 +345,6 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 				.read(GraphQlWebSocketMessage.class, new HttpInputMessageAdapter(message));
 	}
 
-	private SessionState getSessionInfo(WebSocketSession session) {
-		SessionState info = this.sessionInfoMap.get(session.getId());
-		Assert.notNull(info, "No SessionInfo for " + session);
-		return info;
-	}
-
 	@SuppressWarnings("unchecked")
 	private Flux<TextMessage> handleResponse(WebSocketSession session, String id, WebGraphQlResponse response) {
 		if (logger.isDebugEnabled()) {
@@ -364,10 +358,15 @@ public class GraphQlWebSocketHandler extends TextWebSocketHandler implements Sub
 			responseFlux = Flux.from((Publisher<ExecutionResult>) response.getData())
 					.map(ExecutionResult::toSpecification)
 					.doOnSubscribe((subscription) -> {
-							Subscription prev = getSessionInfo(session).getSubscriptions().putIfAbsent(id, subscription);
-							if (prev != null) {
-								throw new SubscriptionExistsException();
-							}
+						SessionState state = this.sessionInfoMap.get(session.getId());
+						if (state == null) {
+							subscription.cancel();
+							return;
+						}
+						Subscription prev = state.getSubscriptions().putIfAbsent(id, subscription);
+						if (prev != null) {
+							throw new SubscriptionExistsException();
+						}
 					});
 		}
 		else {
