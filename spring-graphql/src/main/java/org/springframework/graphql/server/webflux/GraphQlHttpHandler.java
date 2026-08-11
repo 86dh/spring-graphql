@@ -82,19 +82,6 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 		return this.httpOkOnValidationErrors;
 	}
 
-	/**
-	 * Set whether this HTTP handler should use HTTP 200 OK responses if an error occurs before
-	 * the GraphQL request execution phase starts.
-	 * @param httpOkOnValidationErrors whether "HTTP 200 OK" responses should always be used
-	 * @since 1.4.0
-	 * @deprecated since 1.4, will be made {@code false} permanently in a future release
-	 * @see #isHttpOkOnValidationErrors
-	 */
-	@Deprecated(since = "1.4.0", forRemoval = true)
-	public void setHttpOkOnValidationErrors(boolean httpOkOnValidationErrors) {
-		this.httpOkOnValidationErrors = httpOkOnValidationErrors;
-	}
-
 	protected Mono<ServerResponse> prepareResponse(ServerRequest request, WebGraphQlResponse response) {
 		MediaType responseMediaType = selectResponseMediaType(request);
 		HttpStatus responseStatus = selectResponseStatus(response, responseMediaType);

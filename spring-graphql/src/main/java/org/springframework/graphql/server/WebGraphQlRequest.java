@@ -105,48 +105,6 @@ public class WebGraphQlRequest extends DefaultExecutionGraphQlRequest {
 				WebGraphQlRequest.<@Nullable Object>getMap(VARIABLES_KEY, body), getMap(EXTENSIONS_KEY, body), id, locale);
 	}
 
-	/**
-	 * Create an instance.
-	 * @param uri the URL for the HTTP request or WebSocket handshake
-	 * @param headers the HTTP request headers
-	 * @param cookies the HTTP request cookies
-	 * @param attributes request attributes
-	 * @param body the deserialized content of the GraphQL request
-	 * @param id an identifier for the GraphQL request
-	 * @param locale the locale from the HTTP request, if any
-	 * @since 1.2.5
-	 * @deprecated since 1.3.0 in favor {@link #WebGraphQlRequest(URI, HttpHeaders, MultiValueMap, InetSocketAddress, Map, Map, String, Locale)}
-	 */
-	@Deprecated(since = "1.3.0", forRemoval = true)
-	public WebGraphQlRequest(
-			URI uri, HttpHeaders headers, @Nullable MultiValueMap<String, HttpCookie> cookies,
-			Map<String, Object> attributes, GraphQlRequest body, String id, @Nullable Locale locale) {
-
-		this(uri, headers, cookies, null, attributes, body.getDocument(),
-				body.getOperationName(), body.getVariables(), body.getExtensions(), id, locale);
-	}
-
-	/**
-	 * Create an instance.
-	 * @param uri the URL for the HTTP request or WebSocket handshake
-	 * @param headers the HTTP request headers
-	 * @param cookies the HTTP request cookies
-	 * @param attributes request attributes
-	 * @param body the deserialized content of the GraphQL request
-	 * @param id an identifier for the GraphQL request
-	 * @param locale the locale from the HTTP request, if any
-	 * @since 1.1.3
-	 * @deprecated since 1.3.0 in favor {@link #WebGraphQlRequest(URI, HttpHeaders, MultiValueMap, InetSocketAddress, Map, Map, String, Locale)}
-	 */
-	@Deprecated(since = "1.3.0", forRemoval = true)
-	public WebGraphQlRequest(
-			URI uri, HttpHeaders headers, @Nullable MultiValueMap<String, HttpCookie> cookies,
-			Map<String, Object> attributes, Map<String, Object> body, String id, @Nullable Locale locale) {
-
-		this(uri, headers, cookies, null, attributes, getQuery(body), getOperation(body),
-				WebGraphQlRequest.<@Nullable Object>getMap(VARIABLES_KEY, body), getMap(EXTENSIONS_KEY, body), id, locale);
-	}
-
 	private static String getQuery(Map<String, Object> body) {
 		Object value = body.get(QUERY_KEY);
 		if (!(value instanceof String query) || !StringUtils.hasText(query)) {

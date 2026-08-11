@@ -37,7 +37,6 @@ import org.springframework.core.ResolvableType;
 import org.springframework.data.core.TypeInformation;
 import org.springframework.data.domain.Example;
 import org.springframework.data.domain.KeysetScrollPosition;
-import org.springframework.data.domain.OffsetScrollPosition;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Window;
@@ -238,24 +237,27 @@ public abstract class QueryByExampleDataFetcher<T> {
 		for (QueryByExampleExecutor<?> executor : executors) {
 			String typeName = RepositoryUtils.getGraphQlTypeName(executor);
 			if (typeName != null) {
-				Builder<?, ?> builder = customize(executor, builder(executor)
-						.cursorStrategy(cursorStrategy)
-						.defaultScrollSubrange(defaultScrollSubrange));
+				Builder<?, ?> builder = builder(executor).cursorStrategy(cursorStrategy);
+				if (defaultScrollSubrange != null) {
+					builder = builder.defaultScrollSubrange(defaultScrollSubrange.count().getAsInt(),
+							(forward) -> defaultScrollSubrange.position().get());
+				}
+				Builder<?, ?> finalBuilder = customize(executor, builder);
 
 				factories.put(typeName, new DataFetcherFactory() {
 					@Override
 					public DataFetcher<?> single() {
-						return builder.single();
+						return finalBuilder.single();
 					}
 
 					@Override
 					public DataFetcher<?> many() {
-						return builder.many();
+						return finalBuilder.many();
 					}
 
 					@Override
 					public DataFetcher<?> scrollable() {
-						return builder.scrollable();
+						return finalBuilder.scrollable();
 					}
 				});
 			}
@@ -264,24 +266,27 @@ public abstract class QueryByExampleDataFetcher<T> {
 		for (ReactiveQueryByExampleExecutor<?> executor : reactiveExecutors) {
 			String typeName = RepositoryUtils.getGraphQlTypeName(executor);
 			if (typeName != null) {
-				ReactiveBuilder<?, ?> builder = customize(executor, builder(executor)
-						.cursorStrategy(cursorStrategy)
-						.defaultScrollSubrange(defaultScrollSubrange));
+				ReactiveBuilder<?, ?> builder = builder(executor).cursorStrategy(cursorStrategy);
+				if (defaultScrollSubrange != null) {
+					builder = builder.defaultScrollSubrange(defaultScrollSubrange.count().getAsInt(),
+							(forward) -> defaultScrollSubrange.position().get());
+				}
+				ReactiveBuilder<?, ?> finalBuilder = customize(executor, builder);
 
 				factories.put(typeName, new DataFetcherFactory() {
 					@Override
 					public DataFetcher<?> single() {
-						return builder.single();
+						return finalBuilder.single();
 					}
 
 					@Override
 					public DataFetcher<?> many() {
-						return builder.many();
+						return finalBuilder.many();
 					}
 
 					@Override
 					public DataFetcher<?> scrollable() {
-						return builder.scrollable();
+						return finalBuilder.scrollable();
 					}
 				});
 			}
@@ -402,26 +407,6 @@ public abstract class QueryByExampleDataFetcher<T> {
 
 			return new Builder<>(this.executor, this.domainType,
 					this.resultType, this.cursorStrategy, defaultCount, defaultPosition, this.sort);
-		}
-
-		/**
-		 * Configure a {@link ScrollSubrange} to use when a paginated request does
-		 * not specify a cursor and/or a count of items.
-		 * <p>By default, this is {@link OffsetScrollPosition#offset()} with a
-		 * count of 20.
-		 * @param defaultSubrange the default scroll subrange
-		 * @return a new {@link Builder} instance with all previously configured
-		 * options and {@code Sort} applied
-		 * @deprecated in favor of {@link #defaultScrollSubrange(int, Function)}
-		 */
-		@SuppressWarnings("OptionalGetWithoutIsPresent")
-		@Deprecated(since = "1.2.5", forRemoval = true)
-		public Builder<T, R> defaultScrollSubrange(@Nullable ScrollSubrange defaultSubrange) {
-			return new Builder<>(this.executor, this.domainType,
-					this.resultType, this.cursorStrategy,
-					(defaultSubrange != null) ? defaultSubrange.count().getAsInt() : null,
-					(defaultSubrange != null) ? (forward) -> defaultSubrange.position().get() : null,
-					this.sort);
 		}
 
 		/**
@@ -579,26 +564,6 @@ public abstract class QueryByExampleDataFetcher<T> {
 
 			return new ReactiveBuilder<>(this.executor, this.domainType,
 					this.resultType, this.cursorStrategy, defaultCount, defaultPosition, this.sort);
-		}
-
-		/**
-		 * Configure a {@link ScrollSubrange} to use when a paginated request does
-		 * not specify a cursor and/or a count of items.
-		 * <p>By default, this is {@link OffsetScrollPosition#offset()} with a
-		 * count of 20.
-		 * @param defaultSubrange the default scroll subrange
-		 * @return a new {@link Builder} instance with all previously configured
-		 * options and {@code Sort} applied
-		 * @deprecated in favor of {@link #defaultScrollSubrange(int, Function)}
-		 */
-		@SuppressWarnings("OptionalGetWithoutIsPresent")
-		@Deprecated(since = "1.2.5", forRemoval = true)
-		public ReactiveBuilder<T, R> defaultScrollSubrange(@Nullable ScrollSubrange defaultSubrange) {
-			return new ReactiveBuilder<>(this.executor, this.domainType,
-					this.resultType, this.cursorStrategy,
-					(defaultSubrange != null) ? defaultSubrange.count().getAsInt() : null,
-					(defaultSubrange != null) ? (forward) -> defaultSubrange.position().get() : null,
-					this.sort);
 		}
 
 		/**

@@ -63,17 +63,6 @@ public class BatchLoaderHandlerMethod extends InvocableHandlerMethodSupport {
 	 * Create an instance.
 	 * @param handlerMethod the controller method
 	 * @param executor an {@link Executor} to use for {@link Callable} return values
-	 * @deprecated in favor of alternative constructor
-	 */
-	@Deprecated(since = "1.3.0", forRemoval = true)
-	public BatchLoaderHandlerMethod(HandlerMethod handlerMethod, @Nullable Executor executor) {
-		this(handlerMethod, executor, false);
-	}
-
-	/**
-	 * Create an instance.
-	 * @param handlerMethod the controller method
-	 * @param executor an {@link Executor} to use for {@link Callable} return values
 	 * @param invokeAsync whether to invoke the method through the Executor
 	 * @since 1.3.0
 	 */

@@ -60,18 +60,6 @@ public abstract class InvocableHandlerMethodSupport extends HandlerMethod {
 	private final boolean invokeAsync;
 
 
-
-	/**
-	 * Create an instance.
-	 * @param handlerMethod the controller method
-	 * @param executor an {@link Executor} to use for {@link Callable} return values
-	 * @deprecated in favor of alternative constructor
-	 */
-	@Deprecated(since = "1.3.0", forRemoval = true)
-	protected InvocableHandlerMethodSupport(HandlerMethod handlerMethod, @Nullable Executor executor) {
-		this(handlerMethod, executor, false);
-	}
-
 	/**
 	 * Create an instance.
 	 * @param handlerMethod the controller method

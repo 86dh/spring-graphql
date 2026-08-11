@@ -100,22 +100,6 @@ public class GraphQlObservationInstrumentation extends SimplePerformantInstrumen
 	 * @param observationRegistry the registry to use for recording observations
 	 * @param requestObservationConvention the convention to use for request observations
 	 * @param dateFetcherObservationConvention the convention to use for data fetcher observations
-	 * @deprecated since 1.4.0 in favor of {@link #GraphQlObservationInstrumentation(ObservationRegistry,
-	 * ExecutionRequestObservationConvention, DataFetcherObservationConvention, DataLoaderObservationConvention)}
-	 */
-	@Deprecated(since = "1.4.0", forRemoval = true)
-	public GraphQlObservationInstrumentation(ObservationRegistry observationRegistry,
-				@Nullable ExecutionRequestObservationConvention requestObservationConvention,
-				@Nullable DataFetcherObservationConvention dateFetcherObservationConvention) {
-		this(observationRegistry, requestObservationConvention, dateFetcherObservationConvention, null);
-	}
-
-	/**
-	 * Create an {@code GraphQlObservationInstrumentation} that records observations
-	 * against the given {@link ObservationRegistry} with a custom convention.
-	 * @param observationRegistry the registry to use for recording observations
-	 * @param requestObservationConvention the convention to use for request observations
-	 * @param dateFetcherObservationConvention the convention to use for data fetcher observations
 	 * @param dataLoaderObservationConvention the convention to use for data loader observations
 	 * @since 1.4.0
 	 */

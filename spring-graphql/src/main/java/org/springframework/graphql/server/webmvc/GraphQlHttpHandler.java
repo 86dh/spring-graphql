@@ -30,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.HttpMessageConverters;
 import org.springframework.web.server.NotAcceptableStatusException;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
@@ -63,7 +64,7 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 	/**
 	 * Create a new instance with a custom message converter for GraphQL payloads.
 	 * <p>If no converter is provided, the handler will use
-	 * {@link org.springframework.web.servlet.config.annotation.WebMvcConfigurer#configureMessageConverters(List)
+	 * {@link org.springframework.web.servlet.config.annotation.WebMvcConfigurer#configureMessageConverters(HttpMessageConverters.ServerBuilder)}
 	 * the one configured for web use}.
 	 * @param graphQlHandler common handler for GraphQL over HTTP requests
 	 * @param converter the converter to use to read and write GraphQL payloads
@@ -85,19 +86,6 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 	 */
 	public boolean isHttpOkOnValidationErrors() {
 		return this.httpOkOnValidationErrors;
-	}
-
-	/**
-	 * Set whether this HTTP handler should use HTTP 200 OK responses if an error occurs before
-	 * the GraphQL request execution phase starts.
-	 * @param httpOkOnValidationErrors whether "HTTP 200 OK" responses should always be used
-	 * @since 1.4.0
-	 * @deprecated since 1.4, will be made {@code false} permanently in a future release
-	 * @see #isHttpOkOnValidationErrors
-	 */
-	@Deprecated(since = "1.4.0", forRemoval = true)
-	public void setHttpOkOnValidationErrors(boolean httpOkOnValidationErrors) {
-		this.httpOkOnValidationErrors = httpOkOnValidationErrors;
 	}
 
 
