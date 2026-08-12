@@ -20,11 +20,13 @@ package org.springframework.graphql.server.webflux;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 
 import graphql.ErrorType;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
+import graphql.language.OperationDefinition;
 import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -56,6 +58,9 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 
 	private static final Mono<ServerSentEvent<Map<String, Object>>> COMPLETE_EVENT_MONO =
 			Mono.just(ServerSentEvent.<Map<String, Object>>builder(Collections.emptyMap()).event("complete").build());
+
+	private static final Set<OperationDefinition.Operation> SUPPORTED_OPERATIONS =
+			Set.of(OperationDefinition.Operation.SUBSCRIPTION);
 
 	private final @Nullable Duration timeout;
 
@@ -110,6 +115,9 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 					.map(ExecutionResult::toSpecification)
 					.onErrorResume(this::exceptionToResultMap);
 		}
+		else if (!response.getExecutionResult().getErrors().isEmpty()) {
+			resultFlux = Flux.just(response.getExecutionResult().toSpecification());
+		}
 		else {
 			if (this.logger.isDebugEnabled()) {
 				this.logger.debug("A subscription DataFetcher must return a Publisher: " + response.getData());
@@ -138,6 +146,11 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 				.onErrorResume(Throwable.class, (ex) -> ServerResponse.badRequest().build());
 
 		return ((this.timeout != null) ? responseMono.timeout(this.timeout) : responseMono);
+	}
+
+	@Override
+	protected Set<OperationDefinition.Operation> getSupportedOperations() {
+		return SUPPORTED_OPERATIONS;
 	}
 
 	private Mono<Map<String, Object>> exceptionToResultMap(Throwable ex) {

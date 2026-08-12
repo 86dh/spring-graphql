@@ -74,7 +74,7 @@ class GraphQlSseHandlerTests {
 		assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_EVENT_STREAM)).isTrue();
 		assertThat(response.getBodyAsString().block()).isEqualTo("""
 				event:next
-				data:{"errors":[{"message":"SSE handler supports only subscriptions","locations":[],"extensions":{"classification":"OperationNotSupported"}}]}
+				data:{"errors":[{"message":"Operation type 'QUERY' is not allowed for this request","extensions":{"classification":"OperationNotSupported"}}]}
 
 				event:complete
 				data:{}

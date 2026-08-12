@@ -30,6 +30,7 @@ import graphql.execution.preparsed.persisted.ApolloPersistedQuerySupport;
 import graphql.execution.preparsed.persisted.InMemoryPersistedQueryCache;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import tools.jackson.databind.ObjectMapper;
 
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -158,6 +159,21 @@ class GraphQlHttpHandlerTests {
 
 		assertThat(servletResponse.getContentAsString())
 				.isEqualTo("{\"data\":{\"greeting\":\"Hello\"}}");
+	}
+
+	@Test // gh-1506
+	void shouldRejectSubscriptionOperations() throws Exception {
+		GraphQlHttpHandler handler = GraphQlSetup.schemaContent(
+						"type Query { greeting: String } type Subscription { greetings: String }")
+				.subscriptionFetcher("greetings", (env) -> Flux.just("Hi", "Hello"))
+				.toHttpHandler();
+
+		MockHttpServletRequest request = createServletRequest("subscription { greetings }", "*/*");
+		MockHttpServletResponse response = handleRequest(request, handler);
+
+		assertThat(response.getContentAsString()).isEqualTo(
+				"{\"errors\":[{\"message\":\"Operation type 'SUBSCRIPTION' is not allowed for this request\","
+						+ "\"extensions\":{\"classification\":\"OperationNotSupported\"}}]}");
 	}
 
 	@Test

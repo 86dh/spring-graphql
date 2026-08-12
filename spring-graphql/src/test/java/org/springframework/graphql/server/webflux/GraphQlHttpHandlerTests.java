@@ -177,6 +177,26 @@ class GraphQlHttpHandlerTests {
 		assertThat(id).isEqualTo(httpRequest.getId());
 	}
 
+	@Test // gh-1506
+	void shouldRejectSubscriptionOperations() throws Exception {
+		GraphQlHttpHandler handler = GraphQlSetup.schemaContent(
+						"type Query { greeting: String } type Subscription { greetings: String }")
+				.subscriptionFetcher("greetings", (env) -> Flux.just("Hi", "Hello"))
+				.toHttpHandlerWebFlux();
+
+		MockServerHttpRequest httpRequest = MockServerHttpRequest.post("/")
+				.contentType(MediaType.APPLICATION_JSON)
+				.accept(MediaType.ALL)
+				.body(initRequestBody("subscription { greetings }"));
+
+		MockServerHttpResponse response = handleRequest(httpRequest, handler);
+
+		StepVerifier.create(response.getBodyAsString())
+				.expectNext("{\"errors\":[{\"message\":\"Operation type 'SUBSCRIPTION' is not allowed for this request\","
+						+ "\"extensions\":{\"classification\":\"OperationNotSupported\"}}]}")
+				.verifyComplete();
+	}
+
 	@Test
 	void shouldUseCustomCodec() {
 		WebGraphQlHandler webGraphQlHandler = GraphQlSetup.schemaContent("type Query { showId: String }")

@@ -19,7 +19,9 @@ package org.springframework.graphql.server.webmvc;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import graphql.language.OperationDefinition;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -119,6 +121,8 @@ public abstract class AbstractGraphQlHttpHandler {
 				request.attributes(), readBody(request), this.idGenerator.generateId().toString(),
 				LocaleContextHolder.getLocale());
 
+		graphQlRequest.allowedOperations(getSupportedOperations());
+
 		if (this.logger.isDebugEnabled()) {
 			this.logger.debug("Executing: " + graphQlRequest);
 		}
@@ -209,6 +213,13 @@ public abstract class AbstractGraphQlHttpHandler {
 	 */
 	protected abstract ServerResponse prepareResponse(
 			ServerRequest request, Mono<WebGraphQlResponse> responseMono) throws ServletException;
+
+	/**
+	 * Return the GraphQL operation types that this handler supports, regardless
+	 * of the semantics of any particular request.
+	 * @since 2.1.0
+	 */
+	protected abstract Set<OperationDefinition.Operation> getSupportedOperations();
 
 
 	/**

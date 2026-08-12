@@ -17,7 +17,9 @@
 package org.springframework.graphql.server.webflux;
 
 import java.util.List;
+import java.util.Set;
 
+import graphql.language.OperationDefinition;
 import reactor.core.publisher.Mono;
 
 import org.springframework.graphql.MediaTypes;
@@ -46,6 +48,9 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 
 	private static final List<MediaType> SUPPORTED_MEDIA_TYPES = List.of(
 			MediaTypes.APPLICATION_GRAPHQL_RESPONSE, MediaType.APPLICATION_JSON, APPLICATION_GRAPHQL);
+
+	private static final Set<OperationDefinition.Operation> SUPPORTED_OPERATIONS =
+			Set.of(OperationDefinition.Operation.QUERY, OperationDefinition.Operation.MUTATION);
 
 	private boolean httpOkOnValidationErrors = false;
 
@@ -116,6 +121,11 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 			}
 		}
 		return MediaType.APPLICATION_JSON;
+	}
+
+	@Override
+	protected Set<OperationDefinition.Operation> getSupportedOperations() {
+		return SUPPORTED_OPERATIONS;
 	}
 
 }

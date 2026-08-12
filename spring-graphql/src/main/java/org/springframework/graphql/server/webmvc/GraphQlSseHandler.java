@@ -20,12 +20,14 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import graphql.ErrorType;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
+import graphql.language.OperationDefinition;
 import org.apache.commons.logging.Log;
 import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
@@ -54,6 +56,9 @@ import org.springframework.web.servlet.function.ServerResponse;
 public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 
 	private static final Map<String, Object> HEARTBEAT_MAP = new LinkedHashMap<>(0);
+
+	private static final Set<OperationDefinition.Operation> SUPPORTED_OPERATIONS =
+			Set.of(OperationDefinition.Operation.SUBSCRIPTION);
 
 
 	private final @Nullable Duration timeout;
@@ -110,6 +115,10 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 				return Flux.from(publisher).map(ExecutionResult::toSpecification);
 			}
 
+			if (!response.getExecutionResult().getErrors().isEmpty()) {
+				return Flux.just(response.getExecutionResult().toSpecification());
+			}
+
 			if (this.logger.isDebugEnabled()) {
 				this.logger.debug("A subscription DataFetcher must return a Publisher: " + response.getData());
 			}
@@ -126,6 +135,11 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 		return ((this.timeout != null) ?
 				ServerResponse.sse(SseSubscriber.connect(resultFlux, this.logger, this.keepAliveDuration), this.timeout) :
 				ServerResponse.sse(SseSubscriber.connect(resultFlux, this.logger, this.keepAliveDuration)));
+	}
+
+	@Override
+	protected Set<OperationDefinition.Operation> getSupportedOperations() {
+		return SUPPORTED_OPERATIONS;
 	}
 
 

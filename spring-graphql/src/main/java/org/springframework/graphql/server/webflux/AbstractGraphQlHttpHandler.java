@@ -19,7 +19,9 @@ package org.springframework.graphql.server.webflux;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import graphql.language.OperationDefinition;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.jspecify.annotations.Nullable;
@@ -82,6 +84,8 @@ public abstract class AbstractGraphQlHttpHandler {
 							request.remoteAddress().orElse(null), request.attributes(), body,
 							request.exchange().getRequest().getId(),
 							request.exchange().getLocaleContext().getLocale());
+
+					graphQlRequest.allowedOperations(getSupportedOperations());
 
 					if (this.logger.isDebugEnabled()) {
 						this.logger.debug("Executing: " + graphQlRequest);
@@ -146,6 +150,13 @@ public abstract class AbstractGraphQlHttpHandler {
 	 * @return the server response
 	 */
 	protected abstract Mono<ServerResponse> prepareResponse(ServerRequest request, WebGraphQlResponse response);
+
+	/**
+	 * Return the GraphQL operation types that this handler supports, regardless
+	 * of the semantics of any particular request.
+	 * @since 2.1.0
+	 */
+	protected abstract Set<OperationDefinition.Operation> getSupportedOperations();
 
 	/**
 	 * Encode the GraphQL response if custom codecs were provided, or return the result map.
