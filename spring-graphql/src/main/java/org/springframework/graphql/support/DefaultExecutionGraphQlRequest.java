@@ -20,10 +20,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 import graphql.ExecutionInput;
 import graphql.execution.ExecutionId;
+import graphql.language.OperationDefinition;
 import org.jspecify.annotations.Nullable;
 
 import org.springframework.graphql.ExecutionGraphQlRequest;
@@ -45,11 +47,19 @@ import org.springframework.util.Assert;
  */
 public class DefaultExecutionGraphQlRequest extends DefaultGraphQlRequest implements ExecutionGraphQlRequest {
 
+	/**
+	 * Context key name that stores the allowed operation types for the current request.
+	 * A missing context value means 'all operations are allowed'.
+	 */
+	public static final String ALLOWED_OPERATIONS_KEY = "org.springframework.graphql.allowedOperations";
+
 	private final String id;
 
 	private @Nullable ExecutionId executionId;
 
 	private final Locale locale;
+
+	private Set<OperationDefinition.Operation> allowedOperations = ExecutionGraphQlRequest.ALL_OPERATIONS;
 
 	private final List<BiFunction<ExecutionInput, ExecutionInput.Builder, ExecutionInput>> executionInputConfigurers = new ArrayList<>();
 
@@ -97,6 +107,17 @@ public class DefaultExecutionGraphQlRequest extends DefaultGraphQlRequest implem
 	}
 
 	@Override
+	public Set<OperationDefinition.Operation> getAllowedOperations() {
+		return this.allowedOperations;
+	}
+
+	@Override
+	public void allowedOperations(Set<OperationDefinition.Operation> operations) {
+		Assert.state(!operations.isEmpty(), "at least one operation is required");
+		this.allowedOperations = operations;
+	}
+
+	@Override
 	public void configureExecutionInput(BiFunction<ExecutionInput, ExecutionInput.Builder, ExecutionInput> configurer) {
 		this.executionInputConfigurers.add(configurer);
 	}
@@ -110,6 +131,10 @@ public class DefaultExecutionGraphQlRequest extends DefaultGraphQlRequest implem
 				.extensions(getExtensions())
 				.locale(this.locale)
 				.executionId((this.executionId != null) ? this.executionId : ExecutionId.from(this.id));
+
+		if (this.allowedOperations != ALL_OPERATIONS) {
+			inputBuilder = inputBuilder.graphQLContext((ctx) -> ctx.put(ALLOWED_OPERATIONS_KEY, this.allowedOperations));
+		}
 
 		ExecutionInput executionInput = inputBuilder.build();
 

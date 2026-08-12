@@ -427,6 +427,20 @@ immediately after the GraphQL Java engine returns, which would be the case if th
 request is simple enough and did not require asynchronous data fetching.
 
 
+[[execution.operationtypes]]
+== Operation Types restrictions
+
+Different transports place different constraints on which GraphQL operation types (query, mutation, subscription) they may execute.
+For example, HTTP GET is a "safe" method and must not be used to execute mutations.
+On the other hand, HTTP POST allows queries and mutations, but not subscriptions because it cannot do streaming.
+
+To support this, transport protocols express those restrictions on the `ExecutionGraphQlRequest`.
+The list of allowed operations types are set on the request before it's sent to the GraphQL engine.
+
+This is later enforced with a custom `Instrumentation` right before the execution of the operation begins.
+If this type of operation is not allowed, the request is rejected as invalid with an `OperationNotSupported` error type.
+The transport layer reflects that on the wire; xref:transports.adoc#server.transports.http[for HTTP, this is typically done with HTTP response statuses].
+
 [[execution.timeout]]
 == GraphQL Request Timeout
 

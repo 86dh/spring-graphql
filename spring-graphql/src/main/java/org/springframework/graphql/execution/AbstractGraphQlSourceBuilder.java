@@ -121,9 +121,8 @@ public abstract class AbstractGraphQlSourceBuilder<B extends GraphQlSource.Build
 		builder.defaultDataFetcherExceptionHandler(
 				DataFetcherExceptionResolver.createExceptionHandler(this.exceptionResolvers));
 
-		if (!this.instrumentations.isEmpty()) {
-			builder = builder.instrumentation(new ChainedInstrumentation(this.instrumentations));
-		}
+		this.instrumentations.add(new OperationTypeInstrumentation());
+		builder = builder.instrumentation(new ChainedInstrumentation(this.instrumentations));
 
 		applyGraphQlConfigurers(builder);
 

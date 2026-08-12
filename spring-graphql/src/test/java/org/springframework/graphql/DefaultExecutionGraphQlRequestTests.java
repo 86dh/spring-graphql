@@ -17,6 +17,7 @@
 package org.springframework.graphql;
 
 import java.util.Locale;
+import java.util.Set;
 
 import graphql.execution.ExecutionId;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.graphql.support.DefaultExecutionGraphQlRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for {@link DefaultExecutionGraphQlRequest}.
@@ -51,6 +53,11 @@ class DefaultExecutionGraphQlRequestTests {
 	@Test
 	void shouldHaveDefaultLocale() {
 		assertThat(this.request.getLocale()).isEqualTo(Locale.getDefault());
+	}
+
+	@Test
+	void shouldFailForEmptyAllowedOperations() {
+		assertThatThrownBy(() -> request.allowedOperations(Set.of())).isInstanceOf(IllegalStateException.class);
 	}
 
 }

@@ -17,10 +17,12 @@
 package org.springframework.graphql;
 
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 import graphql.ExecutionInput;
 import graphql.execution.ExecutionId;
+import graphql.language.OperationDefinition;
 import org.jspecify.annotations.Nullable;
 
 
@@ -34,6 +36,12 @@ import org.jspecify.annotations.Nullable;
  * @since 1.0.0
  */
 public interface ExecutionGraphQlRequest extends GraphQlRequest {
+
+	/**
+	 * All {@link graphql.language.OperationDefinition.Operation operation types} supported by GraphQL.
+	 * @since 2.1.0
+	 */
+	Set<OperationDefinition.Operation> ALL_OPERATIONS = Set.of(OperationDefinition.Operation.values());
 
 	/**
 	 * Return the transport assigned id for the request that in turn sets
@@ -75,6 +83,24 @@ public interface ExecutionGraphQlRequest extends GraphQlRequest {
 	 * Return the transport assigned locale value, if any.
 	 */
 	@Nullable Locale getLocale();
+
+	/**
+	 * Return the GraphQL operation types that may be executed for this request.
+	 * Transports use this to reflect protocol-level constraints, e.g. HTTP safe
+	 * methods must not execute mutations. Defaults to all operation types.
+	 * @since 2.1.0
+	 */
+	default Set<OperationDefinition.Operation> getAllowedOperations() {
+		return ALL_OPERATIONS;
+	}
+
+	/**
+	 * Restrict the operation types that may be executed for this request.
+	 * @param operations the operation types allowed for this request
+	 * @since 2.1.0
+	 */
+	default void allowedOperations(Set<OperationDefinition.Operation> operations) {
+	}
 
 	/**
 	 * Provide a {@code BiFunction} to help initialize the {@link ExecutionInput}
