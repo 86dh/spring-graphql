@@ -246,7 +246,7 @@ class WebGraphQlTesterBuilderTests {
 
 		@Override
 		public HttpGraphQlTester.Builder<?> initBuilder() {
-			GraphQlHttpHandler handler = new GraphQlHttpHandler(webGraphQlHandler());
+			GraphQlHttpHandler handler = GraphQlHttpHandler.builder(webGraphQlHandler()).build();
 			RouterFunction<ServerResponse> routerFunction = route().POST("/**", handler::handleRequest).build();
 			return HttpGraphQlTester.builder(WebTestClient.bindToRouterFunction(routerFunction).configureClient());
 		}

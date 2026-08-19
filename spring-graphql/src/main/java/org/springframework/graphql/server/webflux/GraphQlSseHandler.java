@@ -35,8 +35,10 @@ import reactor.core.publisher.Mono;
 import org.springframework.graphql.execution.SubscriptionPublisherException;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlResponse;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -66,14 +68,18 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 
 	private final @Nullable Duration keepAliveDuration;
 
+	private final Set<HttpMethod> httpMethods;
+
 
 	/**
 	 * Basic constructor with the handler to delegate to, and no timeout by default,
 	 * which results in never timing out.
 	 * @param graphQlHandler the handler to delegate to
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlSseHandler(WebGraphQlHandler graphQlHandler) {
-		this(graphQlHandler, null, null);
+		this(graphQlHandler, null, null, Set.of(HttpMethod.POST));
 	}
 
 	/**
@@ -82,9 +88,11 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 	 * @param graphQlHandler the handler to delegate to
 	 * @param timeout the timeout value, or {@code null} to never time out
 	 * @since 1.3.3
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlSseHandler(WebGraphQlHandler graphQlHandler, @Nullable Duration timeout) {
-		this(graphQlHandler, null, null);
+		this(graphQlHandler, timeout, null, Set.of(HttpMethod.POST));
 	}
 
 	/**
@@ -95,13 +103,44 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 	 * @param keepAliveDuration how frequently to send empty comment messages
 	 * when no other messages are sent
 	 * @since 1.4.0
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlSseHandler(
 			WebGraphQlHandler graphQlHandler, @Nullable Duration timeout, @Nullable Duration keepAliveDuration) {
 
+		this(graphQlHandler, timeout, keepAliveDuration, Set.of(HttpMethod.POST));
+	}
+
+	private GraphQlSseHandler(WebGraphQlHandler graphQlHandler, @Nullable Duration timeout,
+			@Nullable Duration keepAliveDuration, Set<HttpMethod> httpMethods) {
+
 		super(graphQlHandler, null);
+		Assert.notEmpty(httpMethods, "'httpMethods' must not be empty");
 		this.timeout = timeout;
 		this.keepAliveDuration = keepAliveDuration;
+		this.httpMethods = httpMethods;
+	}
+
+	/**
+	 * Return a builder to create a {@link GraphQlSseHandler}, e.g. to configure
+	 * which HTTP methods it should support.
+	 * @param graphQlHandler common handler for GraphQL over HTTP requests
+	 * @since 2.1.0
+	 */
+	public static Builder builder(WebGraphQlHandler graphQlHandler) {
+		return new Builder(graphQlHandler);
+	}
+
+	/**
+	 * Return the HTTP methods this handler is configured to support.
+	 * <p>Applications should use this value when configuring the matching
+	 * {@link GraphQlRequestPredicates#graphQlSse(String, Set) RequestPredicate},
+	 * so that both stay in sync.
+	 * @since 2.1.0
+	 */
+	public Set<HttpMethod> getHttpMethods() {
+		return this.httpMethods;
 	}
 
 
@@ -191,6 +230,68 @@ public class GraphQlSseHandler extends AbstractGraphQlHttpHandler {
 			this.eventSent = false;
 			return result;
 		}
+	}
+
+
+	/**
+	 * Builder for {@link GraphQlSseHandler}.
+	 * @since 2.1.0
+	 */
+	public static final class Builder {
+
+		private final WebGraphQlHandler graphQlHandler;
+
+		private @Nullable Duration timeout;
+
+		private @Nullable Duration keepAliveDuration;
+
+		private Set<HttpMethod> httpMethods = Set.of(HttpMethod.POST);
+
+		private Builder(WebGraphQlHandler graphQlHandler) {
+			this.graphQlHandler = graphQlHandler;
+		}
+
+		/**
+		 * Set a timeout on how long to wait for the application to return the
+		 * {@link ServerResponse} that will start the stream.
+		 * @param timeout the timeout value, or {@code null} to never time out
+		 */
+		public Builder timeout(@Nullable Duration timeout) {
+			this.timeout = timeout;
+			return this;
+		}
+
+		/**
+		 * Set a keep-alive duration that determines how frequently to send
+		 * heartbeats during periods of inactivity.
+		 * @param keepAliveDuration how frequently to send empty comment messages
+		 * when no other messages are sent
+		 */
+		public Builder keepAliveDuration(@Nullable Duration keepAliveDuration) {
+			this.keepAliveDuration = keepAliveDuration;
+			return this;
+		}
+
+		/**
+		 * Set the HTTP methods that the handler should support.
+		 * <p>By default, only {@link HttpMethod#POST} is supported. Enabling
+		 * {@link HttpMethod#GET} allows clients such as the browser
+		 * {@code EventSource} API, which can only issue GET requests, to use
+		 * this endpoint.
+		 * @param httpMethods the HTTP methods to support
+		 */
+		public Builder httpMethods(HttpMethod... httpMethods) {
+			this.httpMethods = Set.of(httpMethods);
+			return this;
+		}
+
+		/**
+		 * Build the {@link GraphQlSseHandler}.
+		 */
+		public GraphQlSseHandler build() {
+			return new GraphQlSseHandler(this.graphQlHandler, this.timeout, this.keepAliveDuration, this.httpMethods);
+		}
+
 	}
 
 }

@@ -18,6 +18,7 @@ package org.springframework.graphql.server.webflux;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -57,21 +58,49 @@ public final class GraphQlRequestPredicates {
 
 	/**
 	 * Create a {@link RequestPredicate predicate} that matches GraphQL HTTP requests for the configured path.
+	 * <p>Matches only HTTP POST requests. To also match other HTTP methods, use
+	 * {@link #graphQlHttp(String, Set)}.
 	 * @param path the path on which the GraphQL HTTP endpoint is mapped
 	 * @see GraphQlHttpHandler
 	 */
 	public static RequestPredicate graphQlHttp(String path) {
+		return graphQlHttp(path, Set.of(HttpMethod.POST));
+	}
+
+	/**
+	 * Variant of {@link #graphQlHttp(String)} that matches GraphQL HTTP requests
+	 * using one of the given HTTP methods.
+	 * @param path the path on which the GraphQL HTTP endpoint is mapped
+	 * @param methods the HTTP methods to match
+	 * @since 2.1.0
+	 * @see GraphQlHttpHandler
+	 */
+	public static RequestPredicate graphQlHttp(String path, Set<HttpMethod> methods) {
 		return new GraphQlHttpRequestPredicate(
-				path, List.of(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE));
+				path, methods, List.of(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE));
 	}
 
 	/**
 	 * Create a {@link RequestPredicate predicate} that matches GraphQL SSE over HTTP requests for the configured path.
+	 * <p>Matches only HTTP POST requests. To also match other HTTP methods, use
+	 * {@link #graphQlSse(String, Set)}.
 	 * @param path the path on which the GraphQL SSE endpoint is mapped
 	 * @see GraphQlSseHandler
 	 */
 	public static RequestPredicate graphQlSse(String path) {
-		return new GraphQlHttpRequestPredicate(path, List.of(MediaType.TEXT_EVENT_STREAM));
+		return graphQlSse(path, Set.of(HttpMethod.POST));
+	}
+
+	/**
+	 * Variant of {@link #graphQlSse(String)} that matches GraphQL SSE over HTTP
+	 * requests using one of the given HTTP methods.
+	 * @param path the path on which the GraphQL SSE endpoint is mapped
+	 * @param methods the HTTP methods to match
+	 * @since 2.1.0
+	 * @see GraphQlSseHandler
+	 */
+	public static RequestPredicate graphQlSse(String path, Set<HttpMethod> methods) {
+		return new GraphQlHttpRequestPredicate(path, methods, List.of(MediaType.TEXT_EVENT_STREAM));
 	}
 
 	private static class GraphQlHttpRequestPredicate implements RequestPredicate {
@@ -80,33 +109,37 @@ public final class GraphQlRequestPredicates {
 
 		private final PathPattern pattern;
 
+		private final Set<HttpMethod> methods;
+
 		private final List<MediaType> contentTypes;
 
 		private final List<MediaType> acceptedMediaTypes;
 
 
-		GraphQlHttpRequestPredicate(String path, List<MediaType> accepted) {
+		GraphQlHttpRequestPredicate(String path, Set<HttpMethod> methods, List<MediaType> accepted) {
 			Assert.notNull(path, "'path' must not be null");
+			Assert.notEmpty(methods, "'methods' must not be empty");
 			Assert.notEmpty(accepted, "'accepted' must not be empty");
 			PathPatternParser parser = PathPatternParser.defaultInstance;
 			path = parser.initFullPathPattern(path);
 			this.pattern = parser.parse(path);
+			this.methods = methods;
 			this.contentTypes = List.of(MediaType.APPLICATION_JSON, APPLICATION_GRAPHQL);
 			this.acceptedMediaTypes = accepted;
 		}
 
 		@Override
 		public boolean test(ServerRequest request) {
-			return httpMethodMatch(request, HttpMethod.POST)
-					&& contentTypeMatch(request, this.contentTypes)
+			HttpMethod method = resolveHttpMethod(request);
+			return httpMethodMatch(method)
+					&& (disregardContentType(method, request) || contentTypeMatch(request, this.contentTypes))
 					&& acceptMatch(request, this.acceptedMediaTypes)
 					&& pathMatch(request, this.pattern);
 		}
 
-		private static boolean httpMethodMatch(ServerRequest request, HttpMethod expected) {
-			HttpMethod actual = resolveHttpMethod(request);
-			boolean methodMatch = expected.equals(actual);
-			traceMatch("Method", expected, actual, methodMatch);
+		private boolean httpMethodMatch(HttpMethod actual) {
+			boolean methodMatch = this.methods.contains(actual);
+			traceMatch("Method", this.methods, actual, methodMatch);
 			return methodMatch;
 		}
 
@@ -120,10 +153,23 @@ public final class GraphQlRequestPredicates {
 			return request.method();
 		}
 
-		private static boolean contentTypeMatch(ServerRequest request, List<MediaType> contentTypes) {
-			if (CorsUtils.isPreFlightRequest(request.exchange().getRequest())) {
+		private static boolean disregardContentType(HttpMethod method, ServerRequest request) {
+			if (HttpMethod.GET.equals(method)) {
+				if (logger.isTraceEnabled()) {
+					logger.trace("No \"Content-Type\" check required for GET request");
+				}
 				return true;
 			}
+			if (CorsUtils.isPreFlightRequest(request.exchange().getRequest())) {
+				if (logger.isTraceEnabled()) {
+					logger.trace("No \"Content-Type\" check required CORS Preflight request");
+				}
+				return true;
+			}
+			return false;
+
+		}
+		private static boolean contentTypeMatch(ServerRequest request, List<MediaType> contentTypes) {
 			ServerRequest.Headers headers = request.headers();
 			MediaType actual;
 			try {

@@ -194,12 +194,12 @@ public final class GraphQlSetup implements GraphQlServiceSetup {
 
 	@Override
 	public org.springframework.graphql.server.webmvc.GraphQlHttpHandler toHttpHandler() {
-		return new org.springframework.graphql.server.webmvc.GraphQlHttpHandler(toWebGraphQlHandler());
+		return org.springframework.graphql.server.webmvc.GraphQlHttpHandler.builder(toWebGraphQlHandler()).build();
 	}
 
 	@Override
 	public GraphQlHttpHandler toHttpHandlerWebFlux() {
-		return new GraphQlHttpHandler(toWebGraphQlHandler());
+		return GraphQlHttpHandler.builder(toWebGraphQlHandler()).build();
 	}
 
 

@@ -36,7 +36,7 @@ public class WebGraphQlHandlerTimeout {
 				.builder(executionGraphQlService)
 				.interceptor(timeoutInterceptor)
 				.build();
-		GraphQlHttpHandler httpHandler = new GraphQlHttpHandler(webGraphQlHandler);
+		GraphQlHttpHandler httpHandler = GraphQlHttpHandler.builder(webGraphQlHandler).build();
 		// end::interceptor[]
 	}
 }

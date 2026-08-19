@@ -28,10 +28,12 @@ import org.springframework.graphql.server.WebGraphQlInterceptor;
 import org.springframework.graphql.server.WebGraphQlRequest;
 import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.graphql.server.WebGraphQlSetup;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.test.web.servlet.assertj.MvcTestResultAssert;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.GenericWebApplicationContext;
@@ -68,6 +70,79 @@ class GraphQlHttpProtocolTests {
 				.hasContentType(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 				.bodyJson().extractingPath("$.data.greeting").isEqualTo("Hello");
 		resultAssert.bodyJson().doesNotHavePath("$.errors");
+	}
+
+	/*
+	 * For HTTP GET requests, the GraphQL-over-HTTP request parameters MUST be provided
+	 * in the query component of the request URL.
+	 * https://graphql.github.io/graphql-over-http/draft/#sec-GET
+	 */
+	@Test // gh-1450
+	void successWhenValidGetRequest() {
+		MockMvcTester mvcTester = createMvcTester(greetingSetup);
+		MvcTestResultAssert resultAssert = mvcTester.get().accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.uri("/graphql").queryParam("query", "{ greeting }")
+				.assertThat();
+		resultAssert.hasStatusOk()
+				.hasContentType(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.bodyJson().extractingPath("$.data.greeting").isEqualTo("Hello");
+		resultAssert.bodyJson().doesNotHavePath("$.errors");
+	}
+
+	/*
+	 * For HTTP GET requests, "variables" and "extensions", if present and non-empty,
+	 * MUST be encoded as a JSON string.
+	 * https://graphql.github.io/graphql-over-http/draft/#sec-GET
+	 */
+	@Test // gh-1450
+	void successWhenGetRequestWithVariables() {
+		GraphQlSetup graphQlSetup = GraphQlSetup.schemaContent("type Query { greeting(name: String): String }")
+				.queryFetcher("greeting", (env) -> "Hello " + env.<String>getArgument("name"));
+		MockMvcTester mvcTester = createMvcTester(graphQlSetup);
+		MvcTestResultAssert resultAssert = mvcTester.get().accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.uri("/graphql")
+				.queryParam("query", "query($name: String) { greeting(name: $name) }")
+				.queryParam("variables", "{\"name\":\"Spring\"}")
+				.assertThat();
+		resultAssert.hasStatusOk()
+				.hasContentType(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.bodyJson().extractingPath("$.data.greeting").isEqualTo("Hello Spring");
+		resultAssert.bodyJson().doesNotHavePath("$.errors");
+	}
+
+	/*
+	 * For HTTP GET requests, "variables" and "extensions", if present and non-empty,
+	 * MUST be encoded as a JSON string; malformed JSON is a well-formed-request failure.
+	 * https://graphql.github.io/graphql-over-http/draft/#sec-GET
+	 */
+	@Test // gh-1450
+	void requestErrorWhenGetRequestHasMalformedVariables() {
+		MockMvcTester mvcTester = createMvcTester(greetingSetup);
+		MvcTestResultAssert resultAssert = mvcTester.get().accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.uri("/graphql")
+				.queryParam("query", "{ greeting }")
+				.queryParam("variables", "NONSENSE")
+				.assertThat();
+		resultAssert.hasStatus(HttpStatus.BAD_REQUEST);
+	}
+
+	/*
+	 * GET requests MUST NOT be used for executing mutation operations. If the values of {query}
+	 * and {operationName} indicate that a mutation operation is to be executed, the server MUST
+	 * respond with error status code 405 (Method Not Allowed) and halt execution.
+	 * https://graphql.github.io/graphql-over-http/draft/#sec-GET
+	 */
+	@Test // gh-1450
+	void requestErrorWhenMutationOverGet() {
+		GraphQlSetup graphQlSetup = GraphQlSetup.schemaContent(
+						"type Query { greeting: String } type Mutation { updateGreeting: String }")
+				.mutationFetcher("updateGreeting", (env) -> "Updated");
+		MockMvcTester mvcTester = createMvcTester(graphQlSetup);
+		MvcTestResult result = mvcTester.get().accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.uri("/graphql").queryParam("query", "mutation { updateGreeting }")
+				.exchange();
+		assertThat(result.getResponse().getStatus()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED.value());
+		assertThat(result.getResponse().getHeader("Allow")).contains("GET").contains("POST");
 	}
 
 	/*
@@ -225,11 +300,16 @@ class GraphQlHttpProtocolTests {
 		AnnotatedBeanDefinitionReader reader = new AnnotatedBeanDefinitionReader(context);
 		reader.register(MvcTestConfig.class);
 		context.setServletContext(new MockServletContext());
-		GraphQlHttpHandler httpHandler = graphQlSetup.toHttpHandler();
+		GraphQlHttpHandler httpHandler = GraphQlHttpHandler.builder(graphQlSetup.toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET, HttpMethod.POST)
+				.build();
 		RouterFunction<ServerResponse> routerFunction = RouterFunctions
 				.route()
 				.POST("/graphql", RequestPredicates.accept(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE),
-						httpHandler::handleRequest).build();
+						httpHandler::handleRequest)
+				.GET("/graphql", RequestPredicates.accept(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE),
+						httpHandler::handleRequest)
+				.build();
 		context.registerBean(RouterFunction.class, () -> routerFunction);
 		context.refresh();
 		return MockMvcTester.create(MockMvcBuilders.routerFunctions(routerFunction).build());

@@ -16,13 +16,20 @@
 
 package org.springframework.graphql.server.webflux;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
+import org.jspecify.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.Decoder;
+import org.springframework.core.codec.DecodingException;
 import org.springframework.core.codec.Encoder;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
@@ -31,8 +38,14 @@ import org.springframework.http.MediaType;
 import org.springframework.http.codec.CodecConfigurer;
 import org.springframework.http.codec.DecoderHttpMessageReader;
 import org.springframework.http.codec.EncoderHttpMessageWriter;
+import org.springframework.http.codec.HttpMessageReader;
+import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.util.Assert;
+import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
+import org.springframework.web.reactive.function.BodyInserter;
+import org.springframework.web.reactive.function.server.ServerRequest;
+import org.springframework.web.server.ServerWebInputException;
 
 /**
  * Helper class for encoding and decoding GraphQL messages in HTTP transport.
@@ -46,44 +59,101 @@ final class HttpCodecDelegate {
 
 	private static final ResolvableType RESPONSE_TYPE = ResolvableType.forClassWithGenerics(Map.class, String.class, Object.class);
 
+	private static final Function<DecodingException, ServerWebInputException> DECODING_MAPPER =
+			(ex) -> new ServerWebInputException("Failed to read HTTP message", null, ex);
 
-	private final Decoder<?> decoder;
+	private final AtomicReference<@Nullable Decoder<?>> decoder = new AtomicReference<>();
 
-	private final Encoder<?> encoder;
+	private final AtomicReference<@Nullable Encoder<?>> encoder = new AtomicReference<>();
 
-
+	/*
+	 * Will use the custom codecs provided
+	 */
 	HttpCodecDelegate(CodecConfigurer codecConfigurer) {
 		Assert.notNull(codecConfigurer, "CodecConfigurer is required");
-		this.decoder = findJsonDecoder(codecConfigurer);
-		this.encoder = findJsonEncoder(codecConfigurer);
+		this.decoder.set(findJsonDecoder(codecConfigurer.getReaders()));
+		this.encoder.set(findJsonEncoder(codecConfigurer.getWriters()));
 	}
 
-	private static Decoder<?> findJsonDecoder(CodecConfigurer configurer) {
-		return configurer.getReaders().stream()
+	/*
+	 * Codecs will be resolved dynamically from the ones available
+	 */
+	HttpCodecDelegate() {
+	}
+
+	private Decoder<?> getDecoder(ServerRequest serverRequest) {
+		Decoder<?> decoder = this.decoder.get();
+		if (decoder != null) {
+			return decoder;
+		}
+		Decoder<?> resolved = findJsonDecoder(serverRequest.messageReaders());
+		return this.decoder.compareAndSet(null, resolved) ? resolved : Objects.requireNonNull(this.decoder.get());
+	}
+
+	private Encoder<?> getEncoder(BodyInserter.Context context) {
+		Encoder<?> encoder = this.encoder.get();
+		if (encoder != null) {
+			return encoder;
+		}
+		Encoder<?> resolved = findJsonEncoder(context.messageWriters());
+		return this.encoder.compareAndSet(null, resolved) ? resolved : Objects.requireNonNull(this.encoder.get());
+	}
+
+	private static Decoder<?> findJsonDecoder(List<HttpMessageReader<?>> readers) {
+		return readers.stream()
 				.filter((reader) -> reader.canRead(REQUEST_TYPE, MediaType.APPLICATION_JSON))
-				.map((reader) -> ((DecoderHttpMessageReader<?>) reader).getDecoder())
+				.<Decoder<?>>map((reader) -> ((DecoderHttpMessageReader<?>) reader).getDecoder())
 				.findFirst()
-				.orElseThrow(() -> new IllegalArgumentException("No JSON Decoder"));
+				.orElseThrow(() -> new IllegalArgumentException("No JSON Decoder could be found"));
 	}
 
-	private static Encoder<?> findJsonEncoder(CodecConfigurer configurer) {
-		return configurer.getWriters().stream()
+	private static Encoder<?> findJsonEncoder(List<HttpMessageWriter<?>> writers) {
+		return writers.stream()
 				.filter((writer) -> writer.canWrite(RESPONSE_TYPE, MediaType.APPLICATION_JSON))
 				.map((writer) -> ((EncoderHttpMessageWriter<?>) writer).getEncoder())
 				.findFirst()
-				.orElseThrow(() -> new IllegalArgumentException("No JSON Encoder"));
+				.orElseThrow(() -> new IllegalArgumentException("No JSON Encoder could be found"));
 	}
 
-
 	@SuppressWarnings("unchecked")
-	DataBuffer encode(Map<String, Object> resultMap) {
-		return ((Encoder<Map<String, Object>>) this.encoder).encodeValue(
+	DataBuffer encode(Map<String, Object> resultMap, BodyInserter.Context context) {
+		Encoder<Map<String, Object>> encoder = (Encoder<Map<String, Object>>) getEncoder(context);
+		return encoder.encodeValue(
 				resultMap, DefaultDataBufferFactory.sharedInstance, RESPONSE_TYPE, MimeTypeUtils.APPLICATION_JSON, null);
 	}
 
+	/**
+	 * Whether the resolved decoder can read the given content type.
+	 * @since 2.1.0
+	 */
+	boolean canDecode(ServerRequest request, MimeType contentType) {
+		return getDecoder(request).canDecode(REQUEST_TYPE, contentType);
+	}
+
+	/**
+	 * Return the media types supported by the resolved decoder, e.g. for reporting
+	 * in a {@code 415 Unsupported Media Type} response.
+	 * @since 2.1.0
+	 */
+	List<MediaType> getSupportedMediaTypes(ServerRequest request) {
+		return getDecoder(request).getDecodableMimeTypes().stream()
+				.map((mimeType) -> (mimeType instanceof MediaType mediaType) ? mediaType : new MediaType(mimeType))
+				.toList();
+	}
+
 	@SuppressWarnings("unchecked")
-	Mono<SerializableGraphQlRequest> decode(Publisher<DataBuffer> inputStream, MediaType contentType) {
-		return (Mono<SerializableGraphQlRequest>) this.decoder.decodeToMono(inputStream, REQUEST_TYPE, contentType, null);
+	Mono<SerializableGraphQlRequest> decode(ServerRequest request, Publisher<DataBuffer> inputStream, MediaType contentType) {
+		Decoder<SerializableGraphQlRequest> decoder = (Decoder<SerializableGraphQlRequest>) getDecoder(request);
+		return decoder.decodeToMono(inputStream, REQUEST_TYPE, contentType, null)
+				.onErrorMap(DecodingException.class, DECODING_MAPPER);
+	}
+
+	@SuppressWarnings("unchecked")
+	Mono<Map<String, @Nullable Object>> decodeQueryParam(ServerRequest request, String json) {
+		DataBuffer buffer = DefaultDataBufferFactory.sharedInstance.wrap(json.getBytes(StandardCharsets.UTF_8));
+		Decoder<Map<String, @Nullable Object>> decoder = (Decoder<Map<String, @Nullable Object>>) getDecoder(request);
+		return decoder.decodeToMono(Mono.just(buffer), RESPONSE_TYPE, MimeTypeUtils.APPLICATION_JSON, null)
+				.onErrorMap(DecodingException.class, DECODING_MAPPER);
 	}
 
 }

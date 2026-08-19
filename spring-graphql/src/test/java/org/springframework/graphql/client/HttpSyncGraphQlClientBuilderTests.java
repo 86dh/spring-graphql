@@ -246,12 +246,13 @@ class HttpSyncGraphQlClientBuilderTests {
 		}
 
 		private HttpHandler initServer() {
-			GraphQlHttpHandler handler = new GraphQlHttpHandler(WebGraphQlHandler.builder(this.graphQlService)
+			GraphQlHttpHandler handler = GraphQlHttpHandler.builder(WebGraphQlHandler.builder(this.graphQlService)
 					.interceptor((request, chain) -> {
 						this.graphQlRequest = request;
 						return chain.next(graphQlRequest);
 					})
-					.build());
+					.build())
+					.build();
 			RouterFunction<ServerResponse> routerFunction = route().POST("/**", handler::handleRequest).build();
 			return RouterFunctions.toHttpHandler(routerFunction, HandlerStrategies.withDefaults());
 		}

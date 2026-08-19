@@ -138,7 +138,7 @@ class GraphQlSseHandlerTests {
 	@Test
 	void shouldSendKeepAlivePings() throws Exception {
 		WebGraphQlHandler webGraphQlHandler = createWebGraphQlHandler(env -> Mono.delay(Duration.ofMillis(50)).then());
-		GraphQlSseHandler handler = new GraphQlSseHandler(webGraphQlHandler, null, Duration.ofMillis(10));
+		GraphQlSseHandler handler = GraphQlSseHandler.builder(webGraphQlHandler).keepAliveDuration(Duration.ofMillis(10)).build();
 
 		MockHttpServletRequest request = createServletRequest(BOOK_SEARCH_REQUEST);
 		MockHttpServletResponse response = handleRequest(request, handler);
@@ -223,7 +223,7 @@ class GraphQlSseHandlerTests {
 	}
 
 	private GraphQlSseHandler createSseHandler(DataFetcher<?> dataFetcher) {
-		return new GraphQlSseHandler(createWebGraphQlHandler(dataFetcher));
+		return GraphQlSseHandler.builder(createWebGraphQlHandler(dataFetcher)).build();
 	}
 
 	private static WebGraphQlHandler createWebGraphQlHandler(DataFetcher<?> dataFetcher) {

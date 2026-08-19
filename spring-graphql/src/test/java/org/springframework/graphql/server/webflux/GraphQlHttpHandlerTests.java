@@ -16,6 +16,7 @@
 
 package org.springframework.graphql.server.webflux;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -36,6 +37,8 @@ import org.springframework.graphql.GraphQlSetup;
 import org.springframework.graphql.MediaTypes;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.CodecConfigurer;
 import org.springframework.http.codec.DecoderHttpMessageReader;
@@ -51,6 +54,8 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import org.springframework.web.reactive.result.view.ViewResolver;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.UriUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -177,6 +182,62 @@ class GraphQlHttpHandlerTests {
 		assertThat(id).isEqualTo(httpRequest.getId());
 	}
 
+	@Test // gh-1450
+	void shouldSupportGetRequests() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String }")
+								.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET, HttpMethod.POST)
+				.build();
+
+		MockServerHttpRequest httpRequest = MockServerHttpRequest.method(HttpMethod.GET, getRequestUri("query", "{ greeting }"))
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.build();
+
+		MockServerHttpResponse response = handleRequest(httpRequest, handler);
+		StepVerifier.create(response.getBodyAsString())
+				.expectNext("{\"data\":{\"greeting\":\"Hello\"}}")
+				.verifyComplete();
+	}
+
+	@Test // gh-1450
+	void shouldDecodeVariablesFromGetRequest() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting(name: String): String }")
+								.queryFetcher("greeting", (env) -> "Hello " + env.<String>getArgument("name"))
+								.toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET)
+				.build();
+
+		MockServerHttpRequest httpRequest = MockServerHttpRequest.method(HttpMethod.GET, getRequestUri(
+						"query", "query($name: String) { greeting(name: $name) }",
+						"variables", "{\"name\":\"Spring\"}"))
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.build();
+
+		MockServerHttpResponse response = handleRequest(httpRequest, handler);
+		StepVerifier.create(response.getBodyAsString())
+				.expectNext("{\"data\":{\"greeting\":\"Hello Spring\"}}")
+				.verifyComplete();
+	}
+
+	@Test // gh-1450
+	void shouldRejectMutationOverGetWith405() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String } type Mutation { updateGreeting: String }")
+								.mutationFetcher("updateGreeting", (env) -> "Updated").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET, HttpMethod.POST)
+				.build();
+
+		MockServerHttpRequest httpRequest = MockServerHttpRequest.method(HttpMethod.GET, getRequestUri("query", "mutation { updateGreeting }"))
+				.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+				.build();
+
+		MockServerHttpResponse response = handleRequest(httpRequest, handler);
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+		assertThat(response.getHeaders().getAllow()).containsExactlyInAnyOrder(HttpMethod.GET, HttpMethod.POST);
+	}
+
 	@Test // gh-1506
 	void shouldRejectSubscriptionOperations() throws Exception {
 		GraphQlHttpHandler handler = GraphQlSetup.schemaContent(
@@ -219,7 +280,7 @@ class GraphQlHttpHandlerTests {
 		MockServerWebExchange exchange = MockServerWebExchange.from(httpRequest);
 		ServerRequest request = ServerRequest.create(exchange, configurer.getReaders());
 
-		new GraphQlHttpHandler(webGraphQlHandler, configurer)
+		GraphQlHttpHandler.builder(webGraphQlHandler).codecConfigurer(configurer).build()
 				.handleRequest(request)
 				.flatMap(response -> response.writeTo(exchange, new EmptyContext()))
 				.block();
@@ -233,6 +294,14 @@ class GraphQlHttpHandlerTests {
 		SerializableGraphQlRequest request = new SerializableGraphQlRequest();
 		request.setQuery(document);
 		return new ObjectMapper().writeValueAsString(request);
+	}
+
+	private static URI getRequestUri(String... paramNameValuePairs) {
+		UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/");
+		for (int i = 0; i < paramNameValuePairs.length; i += 2) {
+			builder.queryParam(paramNameValuePairs[i], UriUtils.encodeQueryParam(paramNameValuePairs[i + 1], StandardCharsets.UTF_8));
+		}
+		return builder.build(true).toUri();
 	}
 
 	private MockServerHttpResponse handleRequest(MockServerHttpRequest httpRequest, GraphQlHttpHandler handler) {

@@ -19,6 +19,7 @@ package org.springframework.graphql.server.webflux;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,43 @@ class GraphQlRequestPredicatesTests {
 					.accept(MediaType.APPLICATION_JSON, MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
 					.build();
 			return MockServerWebExchange.from(request);
+		}
+
+	}
+
+	@Nested
+	class HttpPredicatesWithMethodsTests {
+
+		RequestPredicate httpPredicate =
+				GraphQlRequestPredicates.graphQlHttp("/graphql", Set.of(HttpMethod.GET, HttpMethod.POST));
+
+		@Test
+		void shouldAcceptGetRequestWithoutContentType() {
+			MockServerHttpRequest request = MockServerHttpRequest.get("/graphql")
+					.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+					.build();
+			ServerRequest serverRequest = ServerRequest.create(MockServerWebExchange.from(request), Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isTrue();
+		}
+
+		@Test
+		void shouldStillAcceptPostRequest() {
+			MockServerHttpRequest request = MockServerHttpRequest.post("/graphql")
+					.contentType(MediaType.APPLICATION_JSON)
+					.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+					.build();
+			ServerRequest serverRequest = ServerRequest.create(MockServerWebExchange.from(request), Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isTrue();
+		}
+
+		@Test
+		void shouldRejectUnconfiguredMethod() {
+			MockServerHttpRequest request = MockServerHttpRequest.put("/graphql")
+					.contentType(MediaType.APPLICATION_JSON)
+					.accept(MediaTypes.APPLICATION_GRAPHQL_RESPONSE)
+					.build();
+			ServerRequest serverRequest = ServerRequest.create(MockServerWebExchange.from(request), Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isFalse();
 		}
 
 	}

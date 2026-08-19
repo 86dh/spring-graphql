@@ -25,14 +25,17 @@ import org.jspecify.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 import org.springframework.graphql.MediaTypes;
+import org.springframework.graphql.execution.OperationNotAllowedException;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverters;
+import org.springframework.util.Assert;
 import org.springframework.web.server.NotAcceptableStatusException;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
@@ -58,12 +61,16 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 
 	private boolean httpOkOnValidationErrors = false;
 
+	private final Set<HttpMethod> httpMethods;
+
 	/**
 	 * Create a new instance.
 	 * @param graphQlHandler common handler for GraphQL over HTTP requests
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlHttpHandler(WebGraphQlHandler graphQlHandler) {
-		super(graphQlHandler, null);
+		this(graphQlHandler, null, Set.of(HttpMethod.POST));
 	}
 
 	/**
@@ -73,9 +80,40 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 	 * the one configured for web use}.
 	 * @param graphQlHandler common handler for GraphQL over HTTP requests
 	 * @param converter the converter to use to read and write GraphQL payloads
+	 * @deprecated since 2.1.0 in favor of {@link #builder(WebGraphQlHandler)}
 	 */
+	@Deprecated(since = "2.1.0", forRemoval = true)
 	public GraphQlHttpHandler(WebGraphQlHandler graphQlHandler, @Nullable HttpMessageConverter<?> converter) {
+		this(graphQlHandler, converter, Set.of(HttpMethod.POST));
+	}
+
+	private GraphQlHttpHandler(
+			WebGraphQlHandler graphQlHandler, @Nullable HttpMessageConverter<?> converter, Set<HttpMethod> httpMethods) {
+
 		super(graphQlHandler, converter);
+		Assert.notEmpty(httpMethods, "'httpMethods' must not be empty");
+		this.httpMethods = httpMethods;
+	}
+
+	/**
+	 * Return a builder to create a {@link GraphQlHttpHandler}, e.g. to configure
+	 * which HTTP methods it should support.
+	 * @param graphQlHandler common handler for GraphQL over HTTP requests
+	 * @since 2.1.0
+	 */
+	public static Builder builder(WebGraphQlHandler graphQlHandler) {
+		return new Builder(graphQlHandler);
+	}
+
+	/**
+	 * Return the HTTP methods this handler is configured to support.
+	 * <p>Applications should use this value when configuring the matching
+	 * {@link GraphQlRequestPredicates#graphQlHttp(String, Set) RequestPredicate},
+	 * so that both stay in sync.
+	 * @since 2.1.0
+	 */
+	public Set<HttpMethod> getHttpMethods() {
+		return this.httpMethods;
 	}
 
 	/**
@@ -99,20 +137,35 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 
 		Mono<ServerResponse> mono = responseMono.map((response) -> {
 			MediaType contentType = selectResponseMediaType(request);
-			HttpStatus responseStatus = selectResponseStatus(response, contentType);
+			HttpStatus responseStatus = selectResponseStatus(request, response, contentType);
 			ServerResponse.BodyBuilder builder = ServerResponse.status(responseStatus);
+			if (responseStatus == HttpStatus.METHOD_NOT_ALLOWED) {
+				builder.allow(this.httpMethods);
+			}
 			builder.headers((headers) -> headers.putAll(response.getResponseHeaders()));
 			builder.contentType(contentType);
 
 			Map<String, Object> resultMap = response.toMap();
-			ServerResponse.HeadersBuilder.WriteFunction writer = getWriteFunction(resultMap, contentType);
-			return (writer != null) ? builder.build(writer) : builder.body(resultMap);
+			return builder.build(getWriteFunction(request, resultMap, contentType));
 		});
 
 		return ServerResponse.async(mono.toFuture());
 	}
 
-	protected HttpStatus selectResponseStatus(WebGraphQlResponse response, MediaType responseMediaType) {
+	/**
+	 * Select the HTTP response status, taking into account any rejection of the
+	 * request's operation type based on the semantics of the current HTTP method.
+	 * @param request the HTTP request
+	 * @param response the GraphQL response
+	 * @param responseMediaType the HTTP response media type
+	 */
+	protected HttpStatus selectResponseStatus(ServerRequest request, WebGraphQlResponse response, MediaType responseMediaType) {
+		if (request.method() == HttpMethod.GET) {
+			OperationNotAllowedException rejection = findRejection(response);
+			if (rejection != null && rejection.getOperation() == OperationDefinition.Operation.MUTATION) {
+				return HttpStatus.METHOD_NOT_ALLOWED;
+			}
+		}
 		if (!isHttpOkOnValidationErrors()
 				&& !response.getExecutionResult().isDataPresent()
 				&& MediaTypes.APPLICATION_GRAPHQL_RESPONSE.equals(responseMediaType)) {
@@ -142,6 +195,55 @@ public class GraphQlHttpHandler extends AbstractGraphQlHttpHandler {
 	@Override
 	protected Set<OperationDefinition.Operation> getSupportedOperations() {
 		return SUPPORTED_OPERATIONS;
+	}
+
+
+	/**
+	 * Builder for {@link GraphQlHttpHandler}.
+	 * @since 2.1.0
+	 */
+	public static final class Builder {
+
+		private final WebGraphQlHandler graphQlHandler;
+
+		private @Nullable HttpMessageConverter<?> converter;
+
+		private Set<HttpMethod> httpMethods = Set.of(HttpMethod.POST);
+
+		private Builder(WebGraphQlHandler graphQlHandler) {
+			this.graphQlHandler = graphQlHandler;
+		}
+
+		/**
+		 * Set the converter to use to read and write GraphQL payloads.
+		 * <p>If not set, the handler will use the one configured for web use.
+		 * @param converter the converter to use
+		 */
+		public Builder messageConverter(HttpMessageConverter<?> converter) {
+			this.converter = converter;
+			return this;
+		}
+
+		/**
+		 * Set the HTTP methods that the handler should support.
+		 * <p>By default, only {@link HttpMethod#POST} is supported. Enabling
+		 * {@link HttpMethod#GET} means that queries and their parameters are
+		 * exposed through the request URL; consider the security implications,
+		 * for example URLs being logged or cached, before enabling it.
+		 * @param httpMethods the HTTP methods to support
+		 */
+		public Builder httpMethods(HttpMethod... httpMethods) {
+			this.httpMethods = Set.of(httpMethods);
+			return this;
+		}
+
+		/**
+		 * Build the {@link GraphQlHttpHandler}.
+		 */
+		public GraphQlHttpHandler build() {
+			return new GraphQlHttpHandler(this.graphQlHandler, this.converter, this.httpMethods);
+		}
+
 	}
 
 }

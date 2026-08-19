@@ -1,8 +1,7 @@
 [[server.transports]]
 = Server Transports
 
-Spring for GraphQL supports server handling of GraphQL requests over HTTP, WebSocket, and
-RSocket.
+Spring for GraphQL supports handling of GraphQL requests over HTTP, WebSocket, and RSocket.
 
 
 [[server.transports.http]]
@@ -10,16 +9,15 @@ RSocket.
 
 `GraphQlHttpHandler` handles GraphQL over HTTP requests and delegates to the
 xref:transports.adoc#server.interception[Interception] chain for request execution. There are two variants, one for
-Spring MVC and one for Spring WebFlux. Both handle requests asynchronously and have
-equivalent functionality, but rely on blocking vs non-blocking I/O respectively for
-writing the HTTP response.
+Spring MVC and one for Spring WebFlux. Both handle requests asynchronously and have equivalent functionality,
+but rely on blocking vs non-blocking I/O respectively for writing the HTTP response.
 
-Requests must use HTTP POST with `"application/json"` as content type and GraphQL request details
-included as JSON in the request body. Clients can request the `"application/graphql-response+json"` media type
-to get the behavior defined in the official
+By default, `GraphQlHttpHandler` only accepts HTTP POST requests, with `"application/json"` as content
+type and GraphQL request details included as JSON in the request body. Clients can request the
+`"application/graphql-response+json"` media type to get the behavior defined in the official
 https://github.com/graphql/graphql-over-http/blob/main/spec/GraphQLOverHTTP.md[GraphQL over HTTP] specification.
 If the client doesn't express any preference, this will be the content type of choice.
-Clients can also request the legacy `"application/json"` media type to get the traditional HTTP behavior.
+Clients can also request the legacy `"application/json"` media type to get the legacy HTTP behavior.
 
 In practice, GraphQL HTTP clients should expect 4xx/5xx HTTP responses if the server is unavailable, security credentials
 are missing or if the request body is not valid JSON. `"application/graphql-response+json"` responses will also use
@@ -41,12 +39,55 @@ In some cases, the application will configure the JSON codec for the HTTP endpoi
 Applications can instantiate `GraphQlHttpHandler` with a custom JSON codec that will be used for GraphQL payloads.
 
 
+[[server.transports.http.get]]
+=== HTTP GET
+
+`GraphQlHttpHandler` can optionally also accept HTTP GET requests, as defined in the
+https://graphql.github.io/graphql-over-http/draft/#sec-GET[GraphQL over HTTP specification]. This is
+useful for clients that can only issue GET requests, such as a browser `EventSource`, or for responses
+that a CDN or intermediate cache can store. GET support is disabled by default and must be enabled
+explicitly, on both the handler and the matching `RequestPredicate`:
+
+[source,java,indent=0,subs="verbatim,quotes"]
+----
+GraphQlHttpHandler httpHandler = GraphQlHttpHandler.builder(webGraphQlHandler)
+        .httpMethods(HttpMethod.GET, HttpMethod.POST)
+        .build();
+
+RequestPredicate predicate = GraphQlRequestPredicates.graphQlHttp("/graphql",
+        Set.of(HttpMethod.GET, HttpMethod.POST));
+----
+
+On a GET request, there is no request body: `query` and `operationName` are read as plain query string
+parameters, while `variables` and `extensions`, when present, must each be a JSON string. An empty
+`variables` or `extensions` parameter is treated the same as if it were absent. If the request URI
+would become too large to encode a request this way, clients should fall back to HTTP POST.
+
+Because GET is a "safe" HTTP method, it must not be used to execute mutations. A GET request whose
+operation is a mutation is rejected with a `405 (Method Not Allowed)` response, with an `Allow` header
+listing the HTTP methods the endpoint accepts; this applies regardless of the requested media type.
+
+Before enabling GET support, consider the following:
+
+* The query string, including `variables`, typically ends up in access logs, browser history,
+`Referer` headers, and intermediate proxies or caches. Do not enable GET if `variables` may carry
+sensitive data, unless those exposure paths are otherwise mitigated.
+* A GET request without a `Content-Type` header is a CORS "simple request": it is sent cross-origin
+with credentials and without a preflight check. The response itself is not readable by the calling
+script cross-origin, but the request is still executed on the server, including any side effects
+a query might have.
+* Spring Security's `CsrfFilter` treats GET as a safe method and does not require a CSRF token for it.
+
+Mutations remain blocked either way, but read-side side effects, such as rate limiting, cost, or
+audit logging, still apply and should be considered as part of enabling this transport.
+
+
 [[server.transports.sse]]
 == Server-Sent Events
 
 `GraphQlSseHandler` is very similar to the HTTP handler listed above, but this time handling GraphQL requests over HTTP
-using the Server-Sent Events protocol. With this transport, clients must send HTTP POST requests to the endpoint with
-`"application/json"` as content type and GraphQL request details included as JSON in the request body; the only
+using the Server-Sent Events protocol. With this transport, clients send HTTP POST requests to the endpoint by default,
+with `"application/json"` as content type and GraphQL request details included as JSON in the request body; the only
 difference with the vanilla HTTP variant is that the client must send `"text/event-stream"` as the `"Accept"` request
 header. The response will be sent as one or more Server-Sent Event(s).
 
@@ -59,6 +100,24 @@ The main use case for `GraphQlSseHandler` is an alternative to the
 xref:transports.adoc#server.transports.websocket[WebSocket transport], receiving a stream of items as a response to a
 subscription operation. Other types of operations, like queries and mutations, are not supported here and should be
 using the plain JSON over HTTP transport variant.
+
+Like `GraphQlHttpHandler`, `GraphQlSseHandler` only accepts HTTP POST requests by default. HTTP GET
+can be enabled the same way, on both the handler and the matching `RequestPredicate`, which is
+useful since a browser `EventSource`, a common client for this transport, can only issue GET
+requests:
+
+[source,java,indent=0,subs="verbatim,quotes"]
+----
+GraphQlSseHandler sseHandler = GraphQlSseHandler.builder(webGraphQlHandler)
+        .httpMethods(HttpMethod.GET, HttpMethod.POST)
+        .build();
+
+RequestPredicate ssePredicate = GraphQlRequestPredicates.graphQlSse("/graphql",
+        Set.of(HttpMethod.GET, HttpMethod.POST));
+----
+
+See the xref:transports.adoc#server.transports.http.get[HTTP GET] section above for the
+query string encoding rules and the security considerations that also apply here.
 
 
 [[server.transports.http.fileupload]]

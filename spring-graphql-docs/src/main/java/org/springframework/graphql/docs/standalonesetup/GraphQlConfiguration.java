@@ -62,7 +62,7 @@ public class GraphQlConfiguration {
 	@Bean // <4>
 	public RouterFunction<ServerResponse> graphQlRouterFunction(ExecutionGraphQlService graphQlService) {
 		WebGraphQlHandler webGraphQlHandler = WebGraphQlHandler.builder(graphQlService).build();
-		GraphQlHttpHandler graphQlHttpHandler = new GraphQlHttpHandler(webGraphQlHandler);
+		GraphQlHttpHandler graphQlHttpHandler = GraphQlHttpHandler.builder(webGraphQlHandler).build();
 		RequestPredicate graphQlPredicate = GraphQlRequestPredicates.graphQlHttp("/graphql");
 		GraphiQlHandler graphiQlHandler = new GraphiQlHandler("/graphql", "");
 		return RouterFunctions.route() // <5>

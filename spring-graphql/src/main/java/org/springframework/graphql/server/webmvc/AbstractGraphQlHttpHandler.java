@@ -16,16 +16,21 @@
 
 package org.springframework.graphql.server.webmvc;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
+import graphql.GraphQLError;
 import graphql.language.OperationDefinition;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.jspecify.annotations.Nullable;
@@ -34,15 +39,19 @@ import reactor.core.publisher.Mono;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.graphql.GraphQlRequest;
 import org.springframework.graphql.ResponseError;
+import org.springframework.graphql.execution.OperationNotAllowedException;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.WebGraphQlRequest;
 import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpInputMessage;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpResponse;
@@ -56,7 +65,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.server.UnsupportedMediaTypeStatusException;
-import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
@@ -73,11 +81,13 @@ public abstract class AbstractGraphQlHttpHandler {
 
 	private static final MediaType APPLICATION_GRAPHQL = MediaType.parseMediaType("application/graphql");
 
+	private static final Set<HttpMethod> SAFE_METHODS = Set.of(HttpMethod.GET);
+
 	private final IdGenerator idGenerator = new AlternativeJdkIdGenerator();
 
 	private final WebGraphQlHandler graphQlHandler;
 
-	private final @Nullable HttpMessageConverter<Object> messageConverter;
+	private final AtomicReference<@Nullable HttpMessageConverter<Object>> jsonMessageConverter = new AtomicReference<>();
 
 
 	@SuppressWarnings("unchecked")
@@ -86,25 +96,26 @@ public abstract class AbstractGraphQlHttpHandler {
 
 		Assert.notNull(graphQlHandler, "WebGraphQlHandler is required");
 		this.graphQlHandler = graphQlHandler;
-		this.messageConverter = (HttpMessageConverter<Object>) messageConverter;
+		if (messageConverter != null) {
+			this.jsonMessageConverter.set((HttpMessageConverter<Object>) messageConverter);
+		}
 	}
-
 
 	/**
-	 * Exposes a {@link ServerResponse.HeadersBuilder.WriteFunction} that writes
-	 * with the {@code HttpMessageConverter} provided to the constructor.
-	 * @param resultMap the result map to write
-	 * @param contentType to set the response content type to
-	 * @return the write function, or {@code null} if a
-	 * {@code HttpMessageConverter} was not provided to the constructor
+	 * Prepare the {@link ServerResponse} for the given GraphQL response.
+	 * @param request the current request
+	 * @param responseMono the GraphQL response
+	 * @return the server response
 	 */
-	protected ServerResponse.HeadersBuilder.@Nullable WriteFunction getWriteFunction(
-			Map<String, Object> resultMap, MediaType contentType) {
+	protected abstract ServerResponse prepareResponse(
+			ServerRequest request, Mono<WebGraphQlResponse> responseMono) throws ServletException;
 
-		return (this.messageConverter != null) ?
-				new MessageConverterWriteFunction(resultMap, contentType, this.messageConverter) : null;
-	}
-
+	/**
+	 * Return the GraphQL operation types that this handler supports, regardless
+	 * of the semantics of any particular request.
+	 * @since 2.1.0
+	 */
+	protected abstract Set<OperationDefinition.Operation> getSupportedOperations();
 
 	/**
 	 * Handle GraphQL over HTTP requests.
@@ -118,10 +129,10 @@ public abstract class AbstractGraphQlHttpHandler {
 		WebGraphQlRequest graphQlRequest = new WebGraphQlRequest(
 				request.uri(), request.headers().asHttpHeaders(), initCookies(request),
 				request.remoteAddress().orElse(null),
-				request.attributes(), readBody(request), this.idGenerator.generateId().toString(),
+				request.attributes(), readRequest(request), this.idGenerator.generateId().toString(),
 				LocaleContextHolder.getLocale());
 
-		graphQlRequest.allowedOperations(getSupportedOperations());
+		graphQlRequest.allowedOperations(getAllowedOperations(request));
 
 		if (this.logger.isDebugEnabled()) {
 			this.logger.debug("Executing: " + graphQlRequest);
@@ -149,91 +160,158 @@ public abstract class AbstractGraphQlHttpHandler {
 		return target;
 	}
 
-	private GraphQlRequest readBody(ServerRequest request) throws ServletException {
+	private GraphQlRequest readRequest(ServerRequest request) throws ServletException {
+		return (request.method() == HttpMethod.GET) ? readRequestFromHttpQueryParams(request) : readRequestFromHttpBody(request);
+	}
+
+	@SuppressWarnings("NullAway")
+	private SerializableGraphQlRequest readRequestFromHttpQueryParams(ServerRequest request) {
+		SerializableGraphQlRequest graphQlRequest = new SerializableGraphQlRequest();
+		request.param("query").filter(StringUtils::hasText).ifPresent(graphQlRequest::setQuery);
+		request.param("operationName").filter(StringUtils::hasText).ifPresent(graphQlRequest::setOperationName);
+		request.param("variables").filter(StringUtils::hasText)
+				.ifPresent((json) -> graphQlRequest.setVariables(decodeQueryParameter(request, json)));
+		request.param("extensions").filter(StringUtils::hasText)
+				.ifPresent((json) -> graphQlRequest.setExtensions(decodeQueryParameter(request, json)));
+		return graphQlRequest;
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> decodeQueryParameter(ServerRequest request, String json) {
+		HttpMessageConverter<Object> converter = resolveJsonConverter(request);
 		try {
-			if (this.messageConverter != null) {
-				ServerRequest.Headers headers = request.headers();
-				MediaType contentType;
-				try {
-					contentType = headers.contentType().orElse(MediaType.APPLICATION_OCTET_STREAM);
-				}
-				catch (InvalidMediaTypeException ex) {
-					throw new UnsupportedMediaTypeStatusException("Could not parse " +
-							"Content-Type [" + headers.firstHeader(HttpHeaders.CONTENT_TYPE) + "]: " + ex.getMessage());
-				}
-				if (this.messageConverter.canRead(SerializableGraphQlRequest.class, contentType)) {
-					ServerHttpRequest httpRequest = new ServletServerHttpRequest(request.servletRequest());
-					return (GraphQlRequest) this.messageConverter.read(SerializableGraphQlRequest.class, httpRequest);
-				}
-				throw new HttpMediaTypeNotSupportedException(
-						contentType, this.messageConverter.getSupportedMediaTypes(), request.method());
+			HttpInputMessage message = new ByteArrayHttpInputMessage(json, MediaType.APPLICATION_JSON);
+			return (Map<String, Object>) converter.read(Map.class, message);
+		}
+		catch (IOException | HttpMessageNotReadableException ex) {
+			throw new ServerWebInputException("Failed to parse JSON in GraphQL query parameter", null, ex);
+		}
+	}
+
+	private GraphQlRequest readRequestFromHttpBody(ServerRequest request) throws ServletException {
+		try {
+			HttpMessageConverter<Object> jsonConverter = resolveJsonConverter(request);
+			ServerRequest.Headers headers = request.headers();
+			MediaType contentType;
+			try {
+				contentType = headers.contentType().orElse(MediaType.APPLICATION_OCTET_STREAM);
 			}
-			else {
-				try {
-					return request.body(SerializableGraphQlRequest.class);
-				}
-				catch (HttpMediaTypeNotSupportedException ex) {
-					return applyApplicationGraphQlFallback(request, ex);
-				}
+			catch (InvalidMediaTypeException ex) {
+				throw new UnsupportedMediaTypeStatusException("Could not parse " +
+						"Content-Type [" + headers.firstHeader(HttpHeaders.CONTENT_TYPE) + "]: " + ex.getMessage());
 			}
+			// Spec requires application/json but some clients still use application/graphql
+			if (APPLICATION_GRAPHQL.includes(contentType)) {
+				contentType = MediaType.APPLICATION_JSON;
+			}
+			if (jsonConverter.canRead(SerializableGraphQlRequest.class, contentType)) {
+				ServerHttpRequest httpRequest = new ServletServerHttpRequest(request.servletRequest());
+				return (GraphQlRequest) jsonConverter.read(SerializableGraphQlRequest.class, httpRequest);
+			}
+			throw new HttpMediaTypeNotSupportedException(
+					contentType, jsonConverter.getSupportedMediaTypes(), request.method());
 		}
 		catch (IOException ex) {
 			throw new ServerWebInputException("I/O error while reading request body", null, ex);
 		}
 	}
 
-	private static SerializableGraphQlRequest applyApplicationGraphQlFallback(
-			ServerRequest request, HttpMediaTypeNotSupportedException ex) throws HttpMediaTypeNotSupportedException {
-
-		String contentTypeHeader = request.headers().firstHeader(HttpHeaders.CONTENT_TYPE);
-		if (StringUtils.hasText(contentTypeHeader)) {
-			MediaType contentType = MediaType.parseMediaType(contentTypeHeader);
-			// Spec requires application/json but some clients still use application/graphql
-			if (APPLICATION_GRAPHQL.includes(contentType)) {
-				try {
-					request = ServerRequest.from(request)
-							.headers((headers) -> headers.setContentType(MediaType.APPLICATION_JSON))
-							.body(request.body(byte[].class))
-							.build();
-					return request.body(SerializableGraphQlRequest.class);
-				}
-				catch (Throwable ex2) {
-					// ignore
-				}
-			}
+	/**
+	 * Intersect {@link #getSupportedOperations() this handler's supported operations}
+	 * with the semantics of the current HTTP method, e.g. safe methods must not
+	 * execute mutations.
+	 */
+	private Set<OperationDefinition.Operation> getAllowedOperations(ServerRequest request) {
+		Set<OperationDefinition.Operation> supported = getSupportedOperations();
+		if (!SAFE_METHODS.contains(request.method())) {
+			return supported;
 		}
-		throw ex;
+		EnumSet<OperationDefinition.Operation> allowed = EnumSet.copyOf(supported);
+		allowed.remove(OperationDefinition.Operation.MUTATION);
+		return allowed;
+	}
+
+
+	/**
+	 * Exposes a {@link ServerResponse.HeadersBuilder.WriteFunction} that writes
+	 * the GraphQL response as JSON using a custom message converter,
+	 * or one that is available in the configured message converters.
+	 * @param request the server request
+	 * @param resultMap the result map to write
+	 * @param contentType to set the response content type to
+	 * @return the write function
+	 */
+	protected ServerResponse.HeadersBuilder.WriteFunction getWriteFunction(
+			ServerRequest request, Map<String, Object> resultMap, MediaType contentType) {
+
+		return (req, res) -> {
+			ServletServerHttpResponse httpResponse = new ServletServerHttpResponse(res);
+			resolveJsonConverter(request).write(resultMap, contentType, httpResponse);
+			return null;
+		};
+	}
+
+	@SuppressWarnings("unchecked")
+	private HttpMessageConverter<Object> resolveJsonConverter(ServerRequest request) {
+		HttpMessageConverter<Object> converter = this.jsonMessageConverter.get();
+		if (converter != null) {
+			return converter;
+		}
+		HttpMessageConverter<Object> resolved = (HttpMessageConverter<Object>) request.messageConverters()
+				.stream()
+				.filter((candidate) -> candidate.canRead(Map.class, MediaType.APPLICATION_JSON))
+				.findFirst()
+				.orElseThrow(() -> new IllegalStateException(
+						"No JSON HttpMessageConverter available to decode 'variables'/'extensions' " +
+								"for GraphQL HTTP GET requests"));
+		return this.jsonMessageConverter.compareAndSet(null, resolved) ?
+				resolved : Objects.requireNonNull(this.jsonMessageConverter.get());
 	}
 
 	/**
-	 * Prepare the {@link ServerResponse} for the given GraphQL response.
-	 * @param request the current request
-	 * @param responseMono the GraphQL response
-	 * @return the server response
-	 */
-	protected abstract ServerResponse prepareResponse(
-			ServerRequest request, Mono<WebGraphQlResponse> responseMono) throws ServletException;
-
-	/**
-	 * Return the GraphQL operation types that this handler supports, regardless
-	 * of the semantics of any particular request.
+	 * Find an {@link OperationNotAllowedException} rejection in the response errors, if any.
+	 * <p>Must be called on the {@link WebGraphQlResponse} before it is serialized.
+	 * @param response the GraphQL response
 	 * @since 2.1.0
 	 */
-	protected abstract Set<OperationDefinition.Operation> getSupportedOperations();
-
+	protected static @Nullable OperationNotAllowedException findRejection(WebGraphQlResponse response) {
+		for (GraphQLError error : response.getExecutionResult().getErrors()) {
+			if (error instanceof OperationNotAllowedException ex) {
+				return ex;
+			}
+		}
+		return null;
+	}
 
 	/**
-	 * WriteFunction that writes with a given, fixed {@link HttpMessageConverter}.
+	 * {@link HttpInputMessage} adapting a JSON string extracted from a query parameter,
+	 * for use with an {@link HttpMessageConverter}.
 	 */
-	private record MessageConverterWriteFunction(
-			Map<String, Object> resultMap, MediaType contentType, HttpMessageConverter<Object> converter)
-			implements ServerResponse.HeadersBuilder.WriteFunction {
+	private static class ByteArrayHttpInputMessage implements HttpInputMessage {
+
+		private final byte[] body;
+
+		private final HttpHeaders headers;
+
+		ByteArrayHttpInputMessage(String json, MediaType contentType) {
+			this.body = json.getBytes(StandardCharsets.UTF_8);
+			this.headers = headersFor(contentType);
+		}
+
+		private static HttpHeaders headersFor(MediaType contentType) {
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(contentType);
+			return headers;
+		}
 
 		@Override
-		public @Nullable ModelAndView write(HttpServletRequest request, HttpServletResponse response) throws Exception {
-			ServletServerHttpResponse httpResponse = new ServletServerHttpResponse(response);
-			this.converter.write(this.resultMap, this.contentType, httpResponse);
-			return null;
+		public InputStream getBody() {
+			return new ByteArrayInputStream(this.body);
+		}
+
+		@Override
+		public HttpHeaders getHeaders() {
+			return this.headers;
 		}
 	}
 

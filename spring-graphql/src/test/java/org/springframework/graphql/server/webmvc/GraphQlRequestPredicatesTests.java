@@ -19,11 +19,13 @@ package org.springframework.graphql.server.webmvc;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.server.NotAcceptableStatusException;
 import org.springframework.web.server.UnsupportedMediaTypeStatusException;
@@ -146,6 +148,39 @@ class GraphQlRequestPredicatesTests {
 			request.setContentType("application/json");
 			request.addHeader("Accept", "application/graphql-response+json");
 			return request;
+		}
+
+	}
+
+	@Nested
+	class HttpPredicatesWithMethodsTests {
+
+		RequestPredicate httpPredicate = GraphQlRequestPredicates.graphQlHttp("/graphql", Set.of(HttpMethod.GET, HttpMethod.POST));
+
+		@Test
+		void shouldAcceptGetRequestWithoutContentType() {
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/graphql");
+			request.addHeader("Accept", "application/graphql-response+json");
+			ServerRequest serverRequest = ServerRequest.create(request, Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isTrue();
+		}
+
+		@Test
+		void shouldStillAcceptPostRequest() {
+			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/graphql");
+			request.setContentType("application/json");
+			request.addHeader("Accept", "application/graphql-response+json");
+			ServerRequest serverRequest = ServerRequest.create(request, Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isTrue();
+		}
+
+		@Test
+		void shouldRejectUnconfiguredMethod() {
+			MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/graphql");
+			request.setContentType("application/json");
+			request.addHeader("Accept", "application/graphql-response+json");
+			ServerRequest serverRequest = ServerRequest.create(request, Collections.emptyList());
+			assertThat(httpPredicate.test(serverRequest)).isFalse();
 		}
 
 	}

@@ -315,7 +315,7 @@ class WebGraphQlClientBuilderTests {
 		}
 
 		private WebClient.Builder initWebClientBuilder() {
-			GraphQlHttpHandler handler = new GraphQlHttpHandler(webGraphQlHandler());
+			GraphQlHttpHandler handler = GraphQlHttpHandler.builder(webGraphQlHandler()).build();
 			RouterFunction<ServerResponse> routerFunction = route().POST("/**", handler::handleRequest).build();
 			HttpHandler httpHandler = RouterFunctions.toHttpHandler(routerFunction, HandlerStrategies.withDefaults());
 			return WebClient.builder().clientConnector(new HttpHandlerConnector(httpHandler));

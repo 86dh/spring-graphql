@@ -38,17 +38,20 @@ import org.springframework.graphql.GraphQlSetup;
 import org.springframework.graphql.MediaTypes;
 import org.springframework.graphql.server.WebGraphQlHandler;
 import org.springframework.graphql.server.support.SerializableGraphQlRequest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.servlet.function.AsyncServerResponse;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
 /**
@@ -146,7 +149,9 @@ class GraphQlHttpHandlerTests {
 		WebGraphQlHandler webGraphQlHandler = GraphQlSetup.schemaContent("type Query { greeting: String }")
 				.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler();
 
-		GraphQlHttpHandler handler = new GraphQlHttpHandler(webGraphQlHandler, new JacksonJsonHttpMessageConverter());
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(webGraphQlHandler)
+				.messageConverter(new JacksonJsonHttpMessageConverter())
+				.build();
 		MockHttpServletRequest servletRequest = createServletRequest("{ greeting }", MediaTypes.APPLICATION_GRAPHQL_RESPONSE.toString());
 
 		ServerRequest request = ServerRequest.create(servletRequest, Collections.emptyList());
@@ -159,6 +164,92 @@ class GraphQlHttpHandlerTests {
 
 		assertThat(servletResponse.getContentAsString())
 				.isEqualTo("{\"data\":{\"greeting\":\"Hello\"}}");
+	}
+
+	@Test // gh-1450
+	void shouldSupportGetRequests() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String }")
+								.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET, HttpMethod.POST)
+				.build();
+
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+		request.setParameter("query", "{ greeting }");
+		request.addHeader("Accept", "application/graphql-response+json");
+
+		MockHttpServletResponse response = handleRequest(request, handler);
+		assertThat(response.getContentAsString()).isEqualTo("{\"data\":{\"greeting\":\"Hello\"}}");
+	}
+
+	@Test // gh-1450
+	void shouldDecodeVariablesFromGetRequest() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting(name: String): String }")
+								.queryFetcher("greeting", (env) -> "Hello " + env.<String>getArgument("name"))
+								.toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET)
+				.build();
+
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+		request.setParameter("query", "query($name: String) { greeting(name: $name) }");
+		request.setParameter("variables", "{\"name\":\"Spring\"}");
+		request.addHeader("Accept", "application/graphql-response+json");
+
+		MockHttpServletResponse response = handleRequest(request, handler);
+		assertThat(response.getContentAsString()).isEqualTo("{\"data\":{\"greeting\":\"Hello Spring\"}}");
+	}
+
+	@Test // gh-1450
+	void shouldTreatEmptyVariablesAsAbsentOnGetRequest() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String }")
+								.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET)
+				.build();
+
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+		request.setParameter("query", "{ greeting }");
+		request.setParameter("variables", "");
+		request.addHeader("Accept", "application/graphql-response+json");
+
+		MockHttpServletResponse response = handleRequest(request, handler);
+		assertThat(response.getContentAsString()).isEqualTo("{\"data\":{\"greeting\":\"Hello\"}}");
+	}
+
+	@Test // gh-1450
+	void shouldRejectMutationOverGetWith405() throws Exception {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String } type Mutation { updateGreeting: String }")
+								.mutationFetcher("updateGreeting", (env) -> "Updated").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET, HttpMethod.POST)
+				.build();
+
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+		request.setParameter("query", "mutation { updateGreeting }");
+		request.addHeader("Accept", "application/graphql-response+json");
+
+		MockHttpServletResponse response = handleRequest(request, handler);
+		assertThat(response.getStatus()).isEqualTo(405);
+		assertThat(response.getHeader("Allow")).contains("GET").contains("POST");
+	}
+
+	@Test // gh-1450
+	void shouldRejectMalformedVariablesOnGetWith400() {
+		GraphQlHttpHandler handler = GraphQlHttpHandler.builder(
+						GraphQlSetup.schemaContent("type Query { greeting: String }")
+								.queryFetcher("greeting", (env) -> "Hello").toWebGraphQlHandler())
+				.httpMethods(HttpMethod.GET)
+				.build();
+
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+		request.setParameter("query", "{ greeting }");
+		request.setParameter("variables", "NONSENSE");
+		request.addHeader("Accept", "application/graphql-response+json");
+
+		ServerRequest serverRequest = ServerRequest.create(request, MESSAGE_READERS);
+		assertThatExceptionOfType(ServerWebInputException.class)
+				.isThrownBy(() -> handler.handleRequest(serverRequest));
 	}
 
 	@Test // gh-1506
