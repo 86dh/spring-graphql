@@ -36,6 +36,7 @@ import org.springframework.graphql.support.DocumentSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpRequest;
@@ -161,6 +162,14 @@ class HttpSyncGraphQlClientBuilderTests {
 	}
 
 	@Test
+	void attributes() {
+		HttpSyncGraphQlClient client = this.setup.initBuilder().url("/graphql one").build();
+		client.document(DOCUMENT).attribute("spring", "graphql").executeSync();
+
+		assertThat(this.setup.getClientRequest().getAttributes()).containsEntry("spring", "graphql");
+	}
+
+	@Test
 	void urlEncoding() {
 
 		HttpSyncGraphQlClient client = this.setup.initBuilder().url("/graphql one").build();
@@ -223,6 +232,8 @@ class HttpSyncGraphQlClientBuilderTests {
 
 		private final MockExecutionGraphQlService graphQlService = new MockExecutionGraphQlService();
 
+		private HttpRequest clientRequest;
+
 		@Nullable
 		private WebGraphQlRequest graphQlRequest;
 
@@ -234,6 +245,11 @@ class HttpSyncGraphQlClientBuilderTests {
 			return this.graphQlService;
 		}
 
+		public HttpRequest getClientRequest() {
+			Assert.state(this.clientRequest != null, "No client request was sent");
+			return clientRequest;
+		}
+
 		public WebGraphQlRequest getActualRequest() {
 			Assert.state(this.graphQlRequest != null, "No saved WebGraphQlRequest");
 			return this.graphQlRequest;
@@ -242,7 +258,13 @@ class HttpSyncGraphQlClientBuilderTests {
 		public HttpSyncGraphQlClient.Builder<?> initBuilder() {
 			HttpHandler httpHandler = initServer();
 			ClientHttpRequestFactory requestFactory = new HttpHandlerClientHttpRequestFactory(httpHandler);
-			return HttpSyncGraphQlClient.builder(RestClient.builder().requestFactory(requestFactory));
+			RestClient restClient = RestClient.builder()
+					.requestFactory(requestFactory)
+					.requestInterceptor((req, body, chain) -> {
+						this.clientRequest = req;
+						return chain.execute(req, body);
+					}).build();
+			return HttpSyncGraphQlClient.builder(restClient);
 		}
 
 		private HttpHandler initServer() {
@@ -268,31 +290,31 @@ class HttpSyncGraphQlClientBuilderTests {
 			this.webClient = WebClient.builder().clientConnector(connector).build();
 		}
 
-			@Override
-			public ClientHttpRequest createRequest(URI uri, HttpMethod httpMethod) {
-				return new MockClientHttpRequest(httpMethod, uri) {
-					@Override
-					protected ClientHttpResponse executeInternal() {
-						return getClientHttpResponse(httpMethod, uri, getHeaders(), getBodyAsBytes());
-					}
-				};
-			}
+		@Override
+		public ClientHttpRequest createRequest(URI uri, HttpMethod httpMethod) {
+			return new MockClientHttpRequest(httpMethod, uri) {
+				@Override
+				protected ClientHttpResponse executeInternal() {
+					return getClientHttpResponse(httpMethod, uri, getHeaders(), getBodyAsBytes());
+				}
+			};
+		}
 
-			private ClientHttpResponse getClientHttpResponse(
-					HttpMethod httpMethod, URI uri, HttpHeaders requestHeaders, byte[] requestBody) {
+		private ClientHttpResponse getClientHttpResponse(
+				HttpMethod httpMethod, URI uri, HttpHeaders requestHeaders, byte[] requestBody) {
 
-				ResponseEntity<byte[]> entity = this.webClient.method(httpMethod).uri(uri)
-						.headers(headers -> headers.putAll(requestHeaders))
-						.bodyValue(requestBody)
-						.retrieve()
-						.toEntity(byte[].class)
-						.block();
+			ResponseEntity<byte[]> entity = this.webClient.method(httpMethod).uri(uri)
+					.headers(headers -> headers.putAll(requestHeaders))
+					.bodyValue(requestBody)
+					.retrieve()
+					.toEntity(byte[].class)
+					.block();
 
-				byte[] body = (entity.getBody() != null ? entity.getBody() : new byte[0]);
-				MockClientHttpResponse response = new MockClientHttpResponse(body, entity.getStatusCode());
-				response.getHeaders().putAll(entity.getHeaders());
-				return response;
-			}
+			byte[] body = (entity.getBody() != null ? entity.getBody() : new byte[0]);
+			MockClientHttpResponse response = new MockClientHttpResponse(body, entity.getStatusCode());
+			response.getHeaders().putAll(entity.getHeaders());
+			return response;
+		}
 	}
 
 
