@@ -191,7 +191,9 @@ public final class JsonKeysetCursorStrategy implements CursorStrategy<Map<String
 
 			com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator validator =
 					com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator.builder()
-					.allowIfBaseType(Map.class)
+					.allowIfSubType(LinkedHashMap.class)
+					.allowIfSubType(HashMap.class)
+					.allowIfSubType("java.util.Collections")
 					.allowIfSubType("java.time.")
 					.allowIfSubType(Calendar.class)
 					.allowIfSubType(Date.class)

@@ -36,6 +36,7 @@ import reactor.core.publisher.Mono;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.data.repository.query.QueryByExampleExecutor;
@@ -165,6 +166,35 @@ class QueryByExampleDataFetcherJpaTests {
 		// auto registration
 		graphQlSetup = paginationSetup(cursorStrategy).runtimeWiring(createRuntimeWiringConfigurer(repository));
 		tester.accept(graphQlSetup);
+	}
+
+	@Test
+	void shouldClampScrollCountToConfiguredMaximum() {
+
+		repository.saveAll(List.of(
+				new Book(1L, "Nineteen Eighty-Four", new Author(101L, "George", "Orwell")),
+				new Book(2L, "The Great Gatsby", new Author(102L, "F. Scott", "Fitzgerald")),
+				new Book(3L, "Catch-22", new Author(103L, "Joseph", "Heller")),
+				new Book(42L, "Hitchhiker's Guide to the Galaxy", new Author(105L, "Douglas", "Adams")),
+				new Book(53L, "Breaking Bad", new Author(106L, "Vince", "Gilligan"))));
+
+		ScrollPositionCursorStrategy cursorStrategy = new ScrollPositionCursorStrategy();
+
+		DataFetcher<Iterable<Book>> dataFetcher = QueryByExampleDataFetcher.builder(repository)
+				.cursorStrategy(cursorStrategy)
+				.maximumScrollCount(2)
+				.scrollable();
+
+		GraphQlSetup graphQlSetup = paginationSetup(cursorStrategy).queryFetcher("books", dataFetcher);
+
+		Mono<WebGraphQlResponse> response = graphQlSetup
+				.toWebGraphQlHandler()
+				.handleRequest(request(BookSource.booksConnectionQuery("first:5")));
+
+		List<Map<String, Object>> edges = ResponseHelper.forResponse(response).toEntity("books.edges",
+				new ParameterizedTypeReference<>() {
+				});
+		assertThat(edges.size()).isEqualTo(2);
 	}
 
 	@Test

@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -35,6 +36,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.keyvalue.core.KeyValueTemplate;
 import org.springframework.data.keyvalue.repository.support.KeyValueRepositoryFactory;
 import org.springframework.data.map.MapKeyValueAdapter;
@@ -119,36 +121,37 @@ class QuerydslDataFetcherTests {
 		tester.accept(graphQlSetup(mockRepository));
 	}
 
-	@Disabled
+	@Disabled("Not yet supported in spring-data-keyvalues")
 	@Test
 	void shouldFetchWindow() {
 
 		// KeyValueRepositoryFactory doesn't have pagination support yet:
 		// https://github.com/spring-projects/spring-data-keyvalue/issues/490
 
-		Book book1 = new Book(42L, "Hitchhiker's Guide to the Galaxy", new Author(0L, "Douglas", "Adams"));
-		Book book2 = new Book(53L, "Breaking Bad", new Author(0L, "", "Heisenberg"));
-		mockRepository.saveAll(Arrays.asList(book1, book2));
+		mockRepository.saveAll(List.of(
+				new Book(1L, "Nineteen Eighty-Four", new Author(101L, "George", "Orwell")),
+				new Book(2L, "The Great Gatsby", new Author(102L, "F. Scott", "Fitzgerald")),
+				new Book(3L, "Catch-22", new Author(103L, "Joseph", "Heller")),
+				new Book(42L, "Hitchhiker's Guide to the Galaxy", new Author(105L, "Douglas", "Adams")),
+				new Book(53L, "Breaking Bad", new Author(106L, "Vince", "Gilligan"))));
 
 		Consumer<GraphQlSetup> tester = graphQlSetup -> {
 
 			Mono<WebGraphQlResponse> response = graphQlSetup
 					.toWebGraphQlHandler()
-					.handleRequest(request(BookSource.booksConnectionQuery("")));
+					.handleRequest(request(BookSource.booksConnectionQuery("first:2, after:\"O_2\"")));
 
-			ResponseHelper.forResponse(response).assertData(
-					"{\"books\":{" +
-					"\"edges\":[" +
-					"{\"cursor\":\"O_0\",\"node\":{\"id\":\"42\",\"name\":\"Hitchhiker's Guide to the Galaxy\"}}," +
-					"{\"cursor\":\"O_1\",\"node\":{\"id\":\"53\",\"name\":\"Breaking Bad\"}}" +
-					"]," +
-					"\"pageInfo\":{" +
-					"\"startCursor\":\"O_0\"," +
-					"\"endCursor\":\"O_1\"," +
-					"\"hasPreviousPage\":true," +
-					"\"hasNextPage\":false" +
-					"}}}"
-			);
+			List<Map<String, Object>> edges = ResponseHelper.forResponse(response).toEntity("books.edges", List.class);
+			assertThat(edges.size()).isEqualTo(2);
+			assertThat(edges.get(0).get("cursor")).isEqualTo("O_3");
+			assertThat(edges.get(1).get("cursor")).isEqualTo("O_4");
+
+			Map<String, Object> pageInfo = ResponseHelper.forResponse(response).toEntity("books.pageInfo", Map.class);
+			assertThat(pageInfo.size()).isEqualTo(4);
+			assertThat(pageInfo.get("startCursor")).isEqualTo("O_3");
+			assertThat(pageInfo.get("endCursor")).isEqualTo("O_4");
+			assertThat(pageInfo.get("hasPreviousPage")).isEqualTo(true);
+			assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
 		};
 
 		// explicit wiring
@@ -165,6 +168,40 @@ class QuerydslDataFetcherTests {
 		graphQlSetup = paginationSetup(cursorStrategy).runtimeWiring(createRuntimeWiringConfigurer(mockRepository, null));
 		tester.accept(graphQlSetup);
 	}
+
+	@Disabled("Not yet supported in spring-data-keyvalues")
+	@Test
+	void shouldClampScrollCountToConfiguredMaximum() {
+
+		// KeyValueRepositoryFactory doesn't have pagination support yet:
+		// https://github.com/spring-projects/spring-data-keyvalue/issues/490
+
+		mockRepository.saveAll(List.of(
+				new Book(1L, "Nineteen Eighty-Four", new Author(101L, "George", "Orwell")),
+				new Book(2L, "The Great Gatsby", new Author(102L, "F. Scott", "Fitzgerald")),
+				new Book(3L, "Catch-22", new Author(103L, "Joseph", "Heller")),
+				new Book(42L, "Hitchhiker's Guide to the Galaxy", new Author(105L, "Douglas", "Adams")),
+				new Book(53L, "Breaking Bad", new Author(106L, "Vince", "Gilligan"))));
+
+		ScrollPositionCursorStrategy cursorStrategy = new ScrollPositionCursorStrategy();
+
+		DataFetcher<Iterable<Book>> dataFetcher = QuerydslDataFetcher.builder(mockRepository)
+				.cursorStrategy(cursorStrategy)
+				.maximumScrollCount(2)
+				.scrollable();
+
+		GraphQlSetup graphQlSetup = paginationSetup(cursorStrategy).queryFetcher("books", dataFetcher);
+
+		Mono<WebGraphQlResponse> response = graphQlSetup
+				.toWebGraphQlHandler()
+				.handleRequest(request(BookSource.booksConnectionQuery("first:5")));
+
+		List<Map<String, Object>> edges = ResponseHelper.forResponse(response).toEntity("books.edges",
+				new ParameterizedTypeReference<>() {
+				});
+		assertThat(edges.size()).isEqualTo(2);
+	}
+
 
 	@Test
 	void shouldFetchMultipleItemsWithListInput() {
