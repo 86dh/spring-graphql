@@ -167,9 +167,9 @@ public final class SchemaMappingInspector {
 	 * Query, Mutation, and Subscription.
 	 */
 	private void checkFieldsContainer(
-			GraphQLFieldsContainer fieldContainer, @Nullable ResolvableType resolvableType) {
+			@Nullable GraphQLFieldsContainer fieldContainer, @Nullable ResolvableType resolvableType) {
 
-		if (!this.inspectedTypes.add(fieldContainer.getName())) {
+		if (fieldContainer == null || !this.inspectedTypes.add(fieldContainer.getName())) {
 			return;
 		}
 

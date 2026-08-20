@@ -81,7 +81,7 @@ public interface ResponseError {
 	 * line and a column, both positive, starting from 1 and describing the
 	 * beginning of an associated syntax element.
 	 */
-	List<SourceLocation> getLocations();
+	@Nullable List<SourceLocation> getLocations();
 
 	/**
 	 * Return a map with GraphQL Java and other implementation specific protocol

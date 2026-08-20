@@ -43,7 +43,6 @@ import org.dataloader.DataLoader;
 import org.dataloader.DataLoaderRegistry;
 import org.dataloader.instrumentation.DataLoaderInstrumentation;
 import org.dataloader.instrumentation.DataLoaderInstrumentationContext;
-import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import org.springframework.graphql.execution.SelfDescribingDataFetcher;
@@ -114,7 +113,7 @@ public class GraphQlObservationInstrumentation extends SimplePerformantInstrumen
 	}
 
 	@Override
-	public @NonNull ExecutionInput instrumentExecutionInput(ExecutionInput executionInput, InstrumentationExecutionParameters parameters, InstrumentationState state) {
+	public ExecutionInput instrumentExecutionInput(ExecutionInput executionInput, InstrumentationExecutionParameters parameters, InstrumentationState state) {
 		return executionInput.transform((builder) -> {
 			DataLoaderRegistry dataLoaderRegistry = DataLoaderRegistry.newRegistry()
 					.registerAll(executionInput.getDataLoaderRegistry())
@@ -141,12 +140,14 @@ public class GraphQlObservationInstrumentation extends SimplePerformantInstrumen
 			requestObservation.start();
 			return new SimpleInstrumentationContext<>() {
 				@Override
-				public void onCompleted(ExecutionResult result, @Nullable Throwable exc) {
+				public void onCompleted(@Nullable ExecutionResult result, @Nullable Throwable exc) {
 					observationContext.setExecutionResult(result);
-					result.getErrors().forEach((graphQLError) -> {
-						Observation.Event event = Observation.Event.of(graphQLError.getErrorType().toString(), graphQLError.getMessage());
-						requestObservation.event(event);
-					});
+					if (result != null) {
+						result.getErrors().forEach((graphQLError) -> {
+							Observation.Event event = Observation.Event.of(graphQLError.getErrorType().toString(), graphQLError.getMessage());
+							requestObservation.event(event);
+						});
+					}
 					if (exc != null) {
 						requestObservation.error(exc);
 					}

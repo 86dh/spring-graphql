@@ -122,7 +122,7 @@ public class DefaultExecutionGraphQlResponse extends AbstractGraphQlResponse imp
 		}
 
 		@Override
-		public List<SourceLocation> getLocations() {
+		public @Nullable List<SourceLocation> getLocations() {
 			return this.delegate.getLocations();
 		}
 

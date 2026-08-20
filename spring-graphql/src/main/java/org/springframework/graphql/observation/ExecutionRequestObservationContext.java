@@ -80,7 +80,7 @@ public class ExecutionRequestObservationContext extends Observation.Context {
 	 * @param executionResult the execution result
 	 * @since 1.1.4
 	 */
-	public void setExecutionResult(ExecutionResult executionResult) {
+	public void setExecutionResult(@Nullable ExecutionResult executionResult) {
 		this.executionResult = executionResult;
 	}
 

@@ -22,6 +22,7 @@ import java.util.function.Predicate;
 
 import graphql.GraphQLContext;
 import io.micrometer.context.ContextAccessor;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@code ContextAccessor} that enables support for reading and writing values
@@ -48,7 +49,7 @@ public class GraphQlContextAccessor implements ContextAccessor<GraphQLContext, G
 	}
 
 	@Override
-	public <T> T readValue(GraphQLContext context, Object key) {
+	public <T> @Nullable T readValue(GraphQLContext context, Object key) {
 		return context.get(key);
 	}
 

@@ -78,7 +78,7 @@ public class ClassNameTypeResolver implements TypeResolver {
 	@Override
 	public @Nullable GraphQLObjectType getType(TypeResolutionEnvironment environment) {
 
-		Class<?> clazz = environment.getObject().getClass();
+		Class<?> clazz = (environment.getObject() != null) ? environment.getObject().getClass() : null;
 		GraphQLSchema schema = environment.getSchema();
 
 		// We don't assert "not null" since GraphQL Java will do that anyway.
@@ -87,8 +87,8 @@ public class ClassNameTypeResolver implements TypeResolver {
 		return getTypeForClass(clazz, schema);
 	}
 
-	private @Nullable GraphQLObjectType getTypeForClass(Class<?> clazz, GraphQLSchema schema) {
-		if (clazz.getName().startsWith("java.")) {
+	private @Nullable GraphQLObjectType getTypeForClass(@Nullable Class<?> clazz, GraphQLSchema schema) {
+		if (clazz == null || clazz.getName().startsWith("java.")) {
 			return null;
 		}
 
