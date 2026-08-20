@@ -317,14 +317,6 @@ final class WebSocketGraphQlTransport implements GraphQlTransport {
 									.then() :
 							Flux.empty())
 					.then();
-
-			if (this.keepAlive != null) {
-				Flux.interval(this.keepAlive, this.keepAlive)
-						.filter((aLong) -> graphQlSession.checkSentOrReceivedMessagesAndClear())
-						.doOnNext((aLong) -> graphQlSession.sendPing())
-						.subscribe();
-			}
-
 			return Mono.zip(sendCompletion, receiveCompletion.then()).then();
 		}
 
