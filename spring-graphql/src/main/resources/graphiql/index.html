@@ -69,9 +69,16 @@
         const params = new URLSearchParams(window.location.search);
         const path = params.get("path") || "/graphql";
         const url = new URL(path, `${location.protocol}//${location.host}`);
+        if (url.origin !== location.origin) {
+            throw new Error('GraphQL endpoint must resolve to the same origin as this page');
+        }
         const wsPath = params.get("wsPath") || "/graphql";
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const subscriptionUrl = new URL(wsPath,`${wsProtocol}//${location.host}`);
+        const wsOrigin = `${wsProtocol}//${location.host}`;
+        const subscriptionUrl = new URL(wsPath, wsOrigin);
+        if (subscriptionUrl.origin !== wsOrigin) {
+            throw new Error('GraphQL WebSocket endpoint must resolve to the same origin as this page');
+        }
         const gqlFetcher = createGraphiQLFetcher({'url': url, 'subscriptionUrl': subscriptionUrl});
         const plugins = [HISTORY_PLUGIN, explorerPlugin()];
         const xsrfToken = document.cookie.match(new RegExp('(?:^| )XSRF-TOKEN=([^;]+)'));
