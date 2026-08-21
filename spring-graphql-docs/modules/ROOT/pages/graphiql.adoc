@@ -9,11 +9,10 @@ In production, applications can require a custom GraphiQL build, that ships with
 Spring for GraphQL ships with https://github.com/spring-projects/spring-graphql/blob/main/spring-graphql/src/main/resources/graphiql/index.html[a stock GraphiQL `index.html` page] that uses static resources hosted on the esm.sh CDN.
 Spring Boot applications can easily {spring-boot-ref-docs}/reference/web/spring-graphql.html#web.graphql.graphiql[enable this page with a configuration property].
 
-Your application may need a custom GraphiQL build if it requires a setup that doesn't rely on a CDN, or if you wish to customize the user interface.
-This can be done in two steps:
-
-1. Configure and compile a GraphiQL build
-2. Expose the built GraphiQL instance through the Spring web infrastructure
+WARNING: The stock GraphiQL integration is intended for development purposes only and should not be exposed as-is in production.
+It loads its static resources from the esm.sh CDN and does not require any authentication to access the GraphQL API it targets.
+Before deploying a GraphiQL page to production, carefully review your application's security model, consider whether an unauthenticated, CDN-dependent IDE is acceptable for your environment, and make sure access to it is protected with the same authentication and authorization mechanisms as the rest of your application.
+Consider building and serving a xref:graphiql.adoc#graphiql.custombuild[custom GraphiQL build] if you need to avoid the CDN dependency or enforce stricter access controls.
 
 [[graphiql.custombuild]]
 == Creating a custom GraphiQL build
